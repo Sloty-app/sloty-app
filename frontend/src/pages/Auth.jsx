@@ -1,0 +1,448 @@
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { api } from "../api";
+import { C } from "../constants";
+import { MapPicker, LocationDetector } from "../components/UI";
+import {
+  ArrowLeft, Mail, Lock, User, Phone, MapPin,
+  Eye, EyeOff, LogIn, UserPlus, Store, Shield,
+  CheckCircle, AlertCircle, Zap, ShieldCheck, RotateCcw
+} from "lucide-react";
+import { GoogleOAuthProvider, useGoogleLogin } from "@react-oauth/google";
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+
+/* ── Role config ── */
+const ROLES = {
+  customer: {
+    icon:     User,
+    label:    "Customer",
+    tagline:  "Skip the queue. Book your slot.",
+    gradient: `linear-gradient(160deg,${C.pri} 0%,#C0304A 100%)`,
+    accent:   C.pri,
+  },
+  owner: {
+    icon:     Store,
+    label:    "Store Owner",
+    tagline:  "Manage your business effortlessly.",
+    gradient: `linear-gradient(160deg,#1A1A2E 0%,#2D1B4E 100%)`,
+    accent:   "#A29BFE",
+  },
+  admin: {
+    icon:     Shield,
+    label:    "Admin",
+    tagline:  "Full control at your fingertips.",
+    gradient: `linear-gradient(160deg,#2D1B4E 0%,#4A1D8C 100%)`,
+    accent:   "#FFD23F",
+  },
+};
+
+/* ── Icon Input ── */
+function IconInput({ icon: Icon, label, type="text", value, onChange, placeholder, color=C.pri, right, ...rest }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ marginBottom:16 }}>
+      {label && <label style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, display:"block", marginBottom:6 }}>{label}</label>}
+      <div style={{ position:"relative", display:"flex", alignItems:"center" }}>
+        <div style={{ position:"absolute", left:14, display:"flex", alignItems:"center", pointerEvents:"none", transition:"color 0.2s" }}>
+          <Icon size={16} color={focused?color:C.muted} strokeWidth={focused?2.5:1.8} />
+        </div>
+        <input
+          type={type}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{ width:"100%", padding:"14px 44px 14px 44px", border:`2px solid ${focused?color:"#E8ECF5"}`, borderRadius:14, fontSize:14, color:C.text, background:focused?"#FAFBFF":"#F8FAFF", outline:"none", fontFamily:"'Nunito',sans-serif", boxSizing:"border-box", transition:"all 0.2s" }}
+          {...rest}
+        />
+        {right && <div style={{ position:"absolute", right:14 }}>{right}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ── Phone + OTP flow — used by both Customers and Store Owners.
+   Each role's OTP requests/verifications are scoped server-side by
+   `role`, so the same phone number can hold a separate account for
+   each — an owner logging in here never collides with (or logs into)
+   their own customer account on the same number. ── */
+function GoogleSignInButton({ onSuccess, onError }) {
+  const login = useGoogleLogin({ onSuccess, onError, flow:"implicit" });
+  return (
+    <button onClick={() => login()} style={{ width:"100%", padding:"12px 16px", background:"#fff", border:"1.5px solid #E8ECF5", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", gap:10, cursor:"pointer", fontFamily:"'Nunito',sans-serif", fontSize:14, fontWeight:800, color:"#3C4043", boxShadow:"0 1px 6px rgba(0,0,0,0.08)" }}>
+      <svg width="18" height="18" viewBox="0 0 18 18">
+        <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+        <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
+        <path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/>
+        <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+      </svg>
+      Continue with Google
+    </button>
+  );
+}
+
+function CustomerOtpAuth({ cfg, role, onSuccess }) {
+  const [step,      setStep]      = useState("phone"); // "phone" | "otp"
+  const [phone,     setPhone]     = useState("");
+  const [otp,       setOtp]       = useState("");
+  const [name,      setName]      = useState("");
+  const [isNewUser, setIsNewUser] = useState(false);
+  const [devOtp,    setDevOtp]    = useState(null);
+  const [err,       setErr]       = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [cooldown,  setCooldown]  = useState(0);
+
+  const handleGoogleSuccess = async (tokenResponse) => {
+    try {
+      const accessToken = tokenResponse.access_token;
+      if (!accessToken) { setErr("Google sign-in failed — no token received"); return; }
+      const res = await api("POST", "/auth/google", { accessToken, role });
+      onSuccess(res);
+    } catch (e) { setErr(e.message || "Google sign-in failed"); }
+  };
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const sendOtp = async () => {
+    setErr("");
+    if (!/^[6-9]\d{9}$/.test(phone)) return setErr("Enter a valid 10-digit mobile number");
+    setLoading(true);
+    try {
+      const res = await api("POST", "/auth/send-otp", { phone, role });
+      setIsNewUser(res.isNewUser);
+      setDevOtp(res.devOtp || null);
+      setStep("otp");
+      setCooldown(45);
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  // Web OTP API — Android Chrome auto-reads the SMS and fills the input.
+  // Falls back gracefully on iOS/desktop (where it's not supported).
+  useEffect(() => {
+    if (step !== "otp") return;
+    if (!("OTPCredential" in window)) return; // not supported, skip silently
+    const ac = new AbortController();
+    navigator.credentials.get({ otp: { transport: ["sms"] }, signal: ac.signal })
+      .then(cred => { if (cred?.code) setOtp(cred.code); })
+      .catch(() => {}); // user dismissed or timed out — not an error
+    return () => ac.abort();
+  }, [step]);
+
+  const verifyOtp = async () => {
+    setErr("");
+    if (otp.length !== 4) return setErr("Enter the 4-digit OTP");
+    if (isNewUser && !name.trim()) return setErr("Please enter your name");
+    setLoading(true);
+    try {
+      const res = await api("POST", "/auth/verify-otp", { phone, otp, name: isNewUser ? name : undefined, role });
+      onSuccess(res);
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ background:"#fff", borderRadius:20, padding:"20px 16px", boxShadow:"0 4px 24px rgba(0,0,0,0.06)", marginBottom:14 }}>
+      {step === "phone" && (
+        <>
+          <p style={{ fontSize:13, color:C.muted, marginBottom:16, textAlign:"center" }}>Enter your mobile number to continue</p>
+          <IconInput
+            icon={Phone} label="MOBILE NUMBER" placeholder="10-digit mobile number"
+            value={phone} onChange={e=>setPhone(e.target.value.replace(/\D/g,"").slice(0,10))}
+            type="tel" color={cfg.accent}
+          />
+          {err && (
+            <div style={{ background:C.red+"12", border:`1.5px solid ${C.red}33`, borderRadius:12, padding:"11px 14px", marginBottom:14, display:"flex", gap:10, alignItems:"center" }}>
+              <AlertCircle size={15} color={C.red} />
+              <p style={{ color:C.red, fontSize:13, fontWeight:700 }}>{err}</p>
+            </div>
+          )}
+          <button onClick={sendOtp} disabled={loading} style={{ width:"100%", padding:"15px", background:loading?"#E0E4EF":cfg.gradient, color:loading?"#AAB":"#fff", border:"none", borderRadius:14, fontSize:15, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:10, boxShadow:loading?"none":"0 6px 24px rgba(0,0,0,0.2)" }}>
+            {loading ? "Sending..." : <><ShieldCheck size={17} /> Send OTP</>}
+          </button>
+        </>
+      )}
+
+      {step === "otp" && (
+        <>
+          <p style={{ fontSize:13, color:C.muted, marginBottom:4, textAlign:"center" }}>OTP sent to <strong style={{ color:C.text }}>+91 {phone}</strong></p>
+          <button onClick={() => {setStep("phone"); setOtp(""); setErr("");}} style={{ display:"block", margin:"0 auto 16px", background:"none", border:"none", color:cfg.accent, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
+            Change number
+          </button>
+
+          {devOtp && (
+            <div style={{ background:C.acc+"18", border:`1.5px dashed ${C.acc}`, borderRadius:12, padding:"10px 14px", marginBottom:14, textAlign:"center" }}>
+              <p style={{ fontSize:11, color:"#B8860B", fontWeight:700 }}>DEV MODE — no SMS provider configured yet</p>
+              <p style={{ fontSize:20, fontWeight:900, color:"#B8860B", letterSpacing:6, marginTop:2 }}>{devOtp}</p>
+            </div>
+          )}
+
+          {isNewUser && (
+            <IconInput icon={User} label="YOUR NAME" placeholder="Full name" value={name} onChange={e=>setName(e.target.value)} color={cfg.accent} />
+          )}
+
+          <div style={{ marginBottom:16 }}>
+            <label style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, display:"block", marginBottom:8 }}>ENTER OTP</label>
+            <input
+              value={otp}
+              onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,4))}
+              type="tel"
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="– – – –"
+              autoComplete="one-time-code"
+              autoFocus
+              style={{
+                width:"100%", padding:"14px 0", textAlign:"center",
+                border:`2px solid ${otp.length===4?cfg.accent:"#E8ECF5"}`,
+                borderRadius:14, fontSize:26, fontWeight:900, letterSpacing:14,
+                color:C.text, background:"#F8FAFF", outline:"none",
+                fontFamily:"'Nunito',sans-serif", boxSizing:"border-box",
+                transition:"all 0.2s",
+              }}
+            />
+          </div>
+
+          {err && (
+            <div style={{ background:C.red+"12", border:`1.5px solid ${C.red}33`, borderRadius:12, padding:"11px 14px", marginBottom:14, display:"flex", gap:10, alignItems:"center" }}>
+              <AlertCircle size={15} color={C.red} />
+              <p style={{ color:C.red, fontSize:13, fontWeight:700 }}>{err}</p>
+            </div>
+          )}
+
+          <button onClick={verifyOtp} disabled={loading} style={{ width:"100%", padding:"15px", background:loading?"#E0E4EF":cfg.gradient, color:loading?"#AAB":"#fff", border:"none", borderRadius:14, fontSize:15, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:12, boxShadow:loading?"none":"0 6px 24px rgba(0,0,0,0.2)" }}>
+            {loading ? "Verifying..." : <><LogIn size={17} /> {isNewUser ? "Create Account" : "Verify & Sign In"}</>}
+          </button>
+
+          <button onClick={sendOtp} disabled={cooldown > 0 || loading} style={{ width:"100%", padding:"10px", background:"none", border:"none", color:cooldown>0?C.muted:cfg.accent, fontSize:12, fontWeight:800, cursor:cooldown>0?"default":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+            <RotateCcw size={12} /> {cooldown > 0 ? `Resend OTP in ${cooldown}s` : "Resend OTP"}
+          </button>
+        </>
+      )}
+
+      {/* Now available for both customers and owners — the /auth/google
+          backend endpoint has been made role-aware, matching the same
+          (email, role) account-separation model as phone/OTP login. */}
+      {GOOGLE_CLIENT_ID && (role === "customer" || role === "owner") && (
+        <div style={{ marginTop:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+            <div style={{ flex:1, height:1, background:"#E8ECF5" }} />
+            <span style={{ fontSize:11, color:C.muted, fontWeight:700 }}>OR</span>
+            <div style={{ flex:1, height:1, background:"#E8ECF5" }} />
+          </div>
+          <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+            <GoogleSignInButton onSuccess={handleGoogleSuccess} onError={() => setErr("Google sign-in failed — please try again")} />
+          </GoogleOAuthProvider>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Auth Page ── */
+export default function Auth() {
+  const { role = "customer" } = useParams();
+  const navigate  = useNavigate();
+  const { login } = useAuth();
+
+  const cfg = ROLES[role] || ROLES.customer;
+  const RoleIcon = cfg.icon;
+
+  const [tab,         setTab]         = useState("login");
+  const [form,        setForm]        = useState({ name:"", email:"", phone:"", password:"", city:"", area:"" });
+  const [err,         setErr]         = useState("");
+  const [loading,     setLoading]     = useState(false);
+  const [showPw,      setShowPw]      = useState(false);
+  const [locationSet, setLocationSet] = useState(false);
+
+  const set = (k,v) => setForm(f => ({...f,[k]:v}));
+
+  const handleSubmit = async () => {
+    setErr(""); setLoading(true);
+    try {
+      let res;
+      if (tab === "login") {
+        if (!form.email)    throw new Error("Please enter your email");
+        if (!form.password) throw new Error("Please enter your password");
+        res = await api("POST", "/auth/login", { email:form.email, password:form.password });
+      } else {
+        if (!form.name)     throw new Error("Please enter your full name");
+        if (!form.email)    throw new Error("Please enter your email");
+        if (!form.phone)    throw new Error("Please enter your phone number");
+        if (!form.password) throw new Error("Password must be at least 6 characters");
+        if (!form.city)     throw new Error("Please select your location");
+        res = await api("POST", "/auth/register", { name:form.name, email:form.email, phone:form.phone, password:form.password, role, city:form.city, area:form.area });
+      }
+      login(res.user, res.token);
+      navigate("/");
+    } catch(e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleOtpSuccess = (res) => {
+    login(res.user, res.token);
+    navigate("/");
+  };
+
+  // Both customers and owners now sign in via phone + OTP, matching
+  // how Swiggy/Zomato/Practo onboard both riders and delivery partners
+  // through the same passwordless mechanism. Admin still uses the
+  // original email+password flow — deliberately unchanged, since admin
+  // access is already meant to be a separate, more deliberate path
+  // (URL-only, no public entry point), not something to make easier to
+  // reach via a quick phone OTP.
+  const usesOtpFlow = role === "customer" || role === "owner";
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#F0F2F8", fontFamily:"'Nunito',sans-serif", display:"flex", flexDirection:"column" }}>
+
+      {/* ── Hero ── */}
+      <div style={{ background:cfg.gradient, padding:"52px 24px 56px", position:"relative", overflow:"hidden" }}>
+        <div style={{ position:"absolute", top:-40, right:-40, width:160, height:160, borderRadius:"50%", background:"rgba(255,255,255,0.05)" }} />
+        <div style={{ position:"absolute", bottom:-20, left:-30, width:100, height:100, borderRadius:"50%", background:"rgba(255,255,255,0.04)" }} />
+
+        <button onClick={() => navigate("/")} style={{ background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.2)", borderRadius:12, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", marginBottom:32 }}>
+          <ArrowLeft size={18} color="#fff" />
+        </button>
+
+        <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+          <div style={{ width:60, height:60, borderRadius:20, background:"rgba(255,255,255,0.15)", border:"1.5px solid rgba(255,255,255,0.25)", display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(10px)" }}>
+            <RoleIcon size={28} color="#fff" strokeWidth={1.6} />
+          </div>
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+              <div style={{ width:6, height:6, borderRadius:"50%", background:cfg.accent }} />
+              <span style={{ fontSize:11, color:cfg.accent, fontWeight:800, letterSpacing:2 }}>SLOTY</span>
+            </div>
+            <h1 style={{ fontSize:26, fontWeight:900, color:"#fff", lineHeight:1.1 }}>{cfg.label}</h1>
+            <p style={{ fontSize:12, color:"rgba(255,255,255,0.6)", marginTop:4 }}>{cfg.tagline}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Form card ── */}
+      <div style={{ flex:1, background:"#F0F2F8", marginTop:-24, borderTopLeftRadius:28, borderTopRightRadius:28, padding:"24px 20px 60px", overflowY:"auto" }}>
+
+        {usesOtpFlow ? (
+          /* ── Customers & Owners: phone + OTP, no password at all ── */
+          <CustomerOtpAuth cfg={cfg} role={role} onSuccess={handleOtpSuccess} />
+        ) : (
+          /* ── Admin only: existing email + password flow, unchanged ── */
+          <>
+            {role !== "admin" && (
+              <div style={{ display:"flex", background:"#E4E8F0", borderRadius:16, padding:4, marginBottom:24 }}>
+                {[
+                  { key:"login",    label:"Sign In",  Icon:LogIn    },
+                  { key:"register", label:"Register", Icon:UserPlus },
+                ].map(({ key, label, Icon }) => (
+                  <button key={key} onClick={() => {setTab(key); setErr("");}} style={{ flex:1, padding:"12px 8px", border:"none", borderRadius:13, background:tab===key?"#fff":"transparent", color:tab===key?cfg.accent:C.muted, fontWeight:tab===key?900:600, cursor:"pointer", fontSize:13, fontFamily:"'Nunito',sans-serif", boxShadow:tab===key?"0 2px 12px rgba(0,0,0,0.1)":"none", display:"flex", alignItems:"center", justifyContent:"center", gap:7, transition:"all 0.2s" }}>
+                    <Icon size={14} strokeWidth={tab===key?2.5:1.8} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div style={{ background:"#fff", borderRadius:20, padding:"20px 16px", boxShadow:"0 4px 24px rgba(0,0,0,0.06)", marginBottom:14 }}>
+              {tab === "register" && (
+                <>
+                  <IconInput icon={User}  label="FULL NAME"    placeholder="Your full name"         value={form.name}  onChange={e=>set("name",e.target.value)}  color={cfg.accent} />
+                  <IconInput icon={Phone} label="PHONE NUMBER" placeholder="10-digit mobile number" value={form.phone} onChange={e=>set("phone",e.target.value)} color={cfg.accent} type="tel" />
+                </>
+              )}
+              <IconInput icon={Mail} label="EMAIL ADDRESS" placeholder="your@email.com" value={form.email} onChange={e=>set("email",e.target.value)} type="email" color={cfg.accent} />
+              <IconInput
+                icon={Lock}
+                label="PASSWORD"
+                placeholder={tab==="login"?"Enter your password":"Min 6 characters"}
+                value={form.password}
+                onChange={e=>set("password",e.target.value)}
+                type={showPw?"text":"password"}
+                color={cfg.accent}
+                right={
+                  <button onClick={() => setShowPw(p=>!p)} style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", padding:4 }}>
+                    {showPw ? <EyeOff size={16} color={C.muted} /> : <Eye size={16} color={C.muted} />}
+                  </button>
+                }
+              />
+
+              {tab === "register" && (
+                <div style={{ marginTop:4 }}>
+                  <label style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
+                    <MapPin size={13} color={C.muted} /> YOUR LOCATION
+                  </label>
+                  <LocationDetector onDetected={loc=>{set("city",loc.city);set("area",loc.area);setLocationSet(true);}} />
+                  <div style={{ display:"flex", alignItems:"center", gap:8, margin:"10px 0" }}>
+                    <div style={{ flex:1, height:1, background:"#E8ECF5" }} />
+                    <span style={{ fontSize:11, color:C.muted }}>or search</span>
+                    <div style={{ flex:1, height:1, background:"#E8ECF5" }} />
+                  </div>
+                  <MapPicker initialCity={form.city} onSelect={loc=>{set("city",loc.city);set("area",loc.area);setLocationSet(true);}} />
+                  {locationSet && form.city && (
+                    <div style={{ background:C.green+"15", borderRadius:12, padding:"10px 14px", marginTop:8, display:"flex", gap:8, alignItems:"center" }}>
+                      <CheckCircle size={14} color={C.green} />
+                      <p style={{ fontSize:12, color:C.green, fontWeight:800 }}>{form.area&&`${form.area}, `}{form.city}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {err && (
+                <div style={{ background:C.red+"12", border:`1.5px solid ${C.red}33`, borderRadius:12, padding:"11px 14px", marginBottom:14, display:"flex", gap:10, alignItems:"center" }}>
+                  <AlertCircle size={15} color={C.red} />
+                  <p style={{ color:C.red, fontSize:13, fontWeight:700 }}>{err}</p>
+                </div>
+              )}
+
+              <button onClick={handleSubmit} disabled={loading} style={{ width:"100%", padding:"15px", background:loading?"#E0E4EF":cfg.gradient, color:loading?"#AAB":"#fff", border:"none", borderRadius:14, fontSize:15, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginTop:4, boxShadow:loading?"none":`0 6px 24px rgba(0,0,0,0.2)`, transition:"all 0.2s" }}>
+                {loading ? (
+                  <>
+                    <div style={{ width:16, height:16, border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", borderRadius:"50%", animation:"spin 0.8s linear infinite" }} />
+                    Please wait...
+                    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                  </>
+                ) : tab==="login" ? (
+                  <><LogIn size={17} /> Sign In</>
+                ) : (
+                  <><UserPlus size={17} /> Create Account</>
+                )}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Demo accounts — admin only now that both customers and owners use OTP */}
+        {!usesOtpFlow && (
+          <div style={{ background:C.sec, borderRadius:18, padding:"14px 16px", border:"1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:12 }}>
+              <Zap size={13} color={cfg.accent} />
+              <p style={{ fontSize:11, fontWeight:800, color:"rgba(255,255,255,0.4)", letterSpacing:1 }}>DEMO ACCOUNTS</p>
+            </div>
+            {[
+              { label:"Admin", email:"admin@demo.com", color:"#FFD23F" },
+            ].map(({ label, email, color }) => (
+              <div key={label} onClick={() => {set("email",email);set("password","demo123");}} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:`1px solid rgba(255,255,255,0.06)`, cursor:"pointer" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <div style={{ width:28, height:28, borderRadius:8, background:color+"22", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <span style={{ fontSize:10, fontWeight:900, color }}>{label[0]}</span>
+                  </div>
+                  <span style={{ fontSize:12, color:"rgba(255,255,255,0.6)", fontWeight:700 }}>{label}</span>
+                </div>
+                <span style={{ fontSize:11, color:color, fontWeight:700 }}>{email}</span>
+              </div>
+            ))}
+            <p style={{ fontSize:10, color:"rgba(255,255,255,0.2)", marginTop:10, textAlign:"center" }}>Password: demo123 · Tap to autofill</p>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
