@@ -1,17 +1,11 @@
-const nodemailer = require("nodemailer");
-
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false, // false for port 587 (STARTTLS) — true would be for port 465
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  // Forces IPv4 for the SMTP connection specifically — Render's network
-  // can't route to Gmail's IPv6 address (confirmed via the exact
-  // "ENETUNREACH" error in the logs), even though the same connection
-  // works fine locally. The global IPv4 DNS preference already set at
-  // the top of server.js doesn't extend to nodemailer's own internal
-  // connection logic, so this needs to be set here specifically too.
   family: 4,
 });
 
