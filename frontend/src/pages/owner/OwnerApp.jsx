@@ -794,7 +794,7 @@ export default function OwnerApp() {
   const [success,     setSuccess]     = useState("");
   const [locationSet, setLocationSet] = useState(false);
   const [form, setForm] = useState({
-    name:"", category:"salon", phone:"", address:"",
+    name:"", category:"salon", phone:"", address:"", email:"",
     city:user.city||"", area:user.area||"", pincode:"", description:"",
     workingHours:{ open:"", close:"" },
   });
@@ -906,6 +906,8 @@ export default function OwnerApp() {
     setErr(""); setSuccess("");
     if (!form.name)    return setErr("Store name is required");
     if (!form.phone)   return setErr("Phone number is required");
+    if (!form.email || !form.email.trim()) return setErr("Please enter your email address");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return setErr("Enter a valid email address");
     if (!form.address) return setErr("Address is required");
     if (!form.city)    return setErr("Please select your store location");
     if (!form.workingHours.open||!form.workingHours.close) return setErr("Please set working hours");
@@ -993,6 +995,8 @@ export default function OwnerApp() {
                 {CATS.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
               </Select>
               <Input label="Phone Number" placeholder="Store contact number" value={form.phone} onChange={e=>set("phone",e.target.value)} type="tel" />
+              <Input label="Your Email" placeholder="your.email@example.com" value={form.email} onChange={e=>set("email",e.target.value)} type="email" />
+              <p style={{ fontSize:10, color:C.muted, marginTop:-8, marginBottom:12 }}>Required — this is where booking notifications and approval updates will reach you.</p>
               <Input label="Full Address"  placeholder="Shop number, street name" value={form.address} onChange={e=>set("address",e.target.value)} />
               <Input label="Pincode"       placeholder="6-digit pincode"          value={form.pincode} onChange={e=>set("pincode",e.target.value)} />
             </Card>

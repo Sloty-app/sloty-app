@@ -162,4 +162,33 @@ const emailTemplates = {
   }),
 };
 
+
+// Added: notifies every admin when a new store is submitted and needs
+// review — closes the gap where admins would otherwise only find out
+// by manually checking the pending-approvals list.
+emailTemplates.newStorePendingAdmin = (storeName, ownerName, category, city) => ({
+  subject: `🆕 New Store Pending Approval — ${storeName}`,
+  html: `
+  <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1)">
+    <div style="background:linear-gradient(135deg,#1A1A2E,#2D1B4E);padding:32px;text-align:center">
+      <h1 style="color:#fff;margin:0;font-size:28px">📍 Sloty</h1>
+      <p style="color:rgba(255,255,255,0.6);margin:8px 0 0">Admin Dashboard</p>
+    </div>
+    <div style="padding:32px">
+      <h2 style="color:#1A1A2E;margin:0 0 8px">New Store Pending Approval 🆕</h2>
+      <p style="color:#8892A4">A new store has been submitted and is waiting for your review.</p>
+      <div style="background:#F0F2F8;border-radius:12px;padding:20px;margin:20px 0;border-left:4px solid #1A1A2E">
+        <p style="margin:0 0 8px;color:#1A1A2E"><strong>🏪 Store:</strong> ${storeName}</p>
+        <p style="margin:0 0 8px;color:#1A1A2E"><strong>👤 Owner:</strong> ${ownerName}</p>
+        <p style="margin:0 0 8px;color:#1A1A2E"><strong>🏷️ Category:</strong> ${category}</p>
+        <p style="margin:0;color:#1A1A2E"><strong>📍 City:</strong> ${city}</p>
+      </div>
+      <p style="color:#8892A4;font-size:13px;text-align:center">Login to the Sloty admin dashboard to review and approve.</p>
+    </div>
+    <div style="background:#F0F2F8;padding:20px;text-align:center">
+      <p style="color:#8892A4;margin:0;font-size:12px">© 2026 Sloty · Made for India 🇮🇳</p>
+    </div>
+  </div>`,
+});
+
 module.exports = { sendEmail, emailTemplates };

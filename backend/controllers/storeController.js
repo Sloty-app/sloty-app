@@ -50,13 +50,70 @@ exports.getStore = async (req, res) => {
   }
 };
 
+// Matches the exact placeholder formats used for phone+OTP signups —
+// customer accounts get {phone}@sloty.com, owner accounts get
+// {phone}@owner.sloty.com. A store owner submitting registration with
+// either of these means they never actually entered a real email
+// anywhere, which is exactly the gap being closed here.
+const isPlaceholderEmail = (email) => /^\d{10}@(owner\.)?sloty\.com$/i.test(email || "");
+
 // POST /api/stores — Owner registers their store
 exports.createStore = async (req, res) => {
   try {
+    // A real, working email is required at this step specifically —
+    // this is the one moment every owner reliably passes through
+    // (unlike Settings, which is easy to skip), and it's the email
+    // that "New Booking" notifications actually depend on working.
+    const { email } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success:false, message:"Please enter your email address" });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return res.status(400).json({ success:false, message:"Enter a valid email address" });
+    }
+    if (isPlaceholderEmail(email.trim())) {
+      return res.status(400).json({ success:false, message:"Please enter your real email address, not an auto-generated one" });
+    }
+
     req.body.owner = req.user.id;
     const exists = await Store.findOne({ owner:req.user.id, name:req.body.name });
     if (exists) return res.status(400).json({ success:false, message:"You already have a store with this name" });
+
+    // email isn't an actual Store schema field — it's only being used
+    // here to update the owner's own account, then removed before
+    // creating the Store document so it doesn't get silently dropped
+    // or cause a schema validation surprise.
+    const ownerEmail = req.body.email.trim();
+    delete req.body.email;
+
     const store = await Store.create(req.body);
+
+    // Update the owner's real account email — this is what makes
+    // future "New Booking" notifications actually reach them, instead
+    // of silently going to their auto-generated placeholder address.
+    await User.findByIdAndUpdate(req.user.id, { email: ownerEmail }, { runValidators: true }).catch(err => {
+      // A duplicate-email collision here is a genuine edge case (this
+      // email already used by another account) — logged, but doesn't
+      // block store registration itself from succeeding.
+      console.error("Could not update owner email during store registration:", err.message);
+    });
+
+    // Notify every admin that a new store needs review — fire-and-
+    // forget, same reasoning as booking notifications: this is a
+    // side effect of registration succeeding, not something that
+    // should slow down or risk the actual registration response.
+    (async () => {
+      try {
+        const admins = await User.find({ role: "admin" }).select("email name");
+        const template = emailTemplates.newStorePendingAdmin(store.name, req.user.name, store.category, store.city);
+        await Promise.all(
+          admins.filter(a => a.email).map(a => sendEmail(a.email, template.subject, template.html))
+        );
+      } catch (notifyErr) {
+        console.error("Admin notification error (store still registered):", notifyErr.message);
+      }
+    })();
+
     res.status(201).json({
       success: true,
       message: "Store registered! ⏳ Waiting for admin approval. We will notify you soon.",
@@ -102,11 +159,23 @@ exports.approveStore = async (req, res) => {
     );
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
 
-    const owner = await User.findById(store.owner);
-    if (owner?.email) {
-      const template = emailTemplates.storeApproved(owner.name, store.name);
-      await sendEmail(owner.email, template.subject, template.html);
-    }
+    // Fire-and-forget — the approval itself is already saved above.
+    // The admin tapping "Approve" shouldn't wait on an SMTP round-trip
+    // (which is exactly what was making this feel slow, and likely
+    // why it only appeared approved after a manual refresh — the
+    // request just hadn't actually finished yet by the time it looked
+    // like nothing happened).
+    (async () => {
+      try {
+        const owner = await User.findById(store.owner);
+        if (owner?.email) {
+          const template = emailTemplates.storeApproved(owner.name, store.name);
+          await sendEmail(owner.email, template.subject, template.html);
+        }
+      } catch (notifyErr) {
+        console.error("Store-approval email error (approval still saved):", notifyErr.message);
+      }
+    })();
 
     res.status(200).json({ success:true, message:`✅ "${store.name}" approved!`, store });
   } catch (err) {
@@ -180,14 +249,7 @@ exports.addReview = async (req, res) => {
     res.status(500).json({ success:false, message:"Server error" });
   }
 };
-// controllers/storeController.js — ADD this function to the existing file
-//
-// GET /api/stores/admin/:id/analytics
-// Returns everything an admin needs to examine one store: booking
-// counts by status, real revenue (from completed bookings only —
-// never trust totalBookings alone for money), rating, recent activity.
-// controllers/storeController.js — ADD this function to the existing file
-//
+
 // GET /api/stores/admin/:id/analytics
 // Returns everything an admin needs to examine one store: booking
 // counts by status, real revenue (from completed bookings only —
@@ -229,7 +291,7 @@ exports.getStoreAnalytics = async (req, res) => {
         _id: store._id, name: store.name, category: store.category,
         city: store.city, area: store.area, phone: store.phone,
         rating: store.rating, totalReviews: store.totalReviews,
-        isApproved: store.isApproved, isOpen: store.isOpen, isActive: store.isActive, isActive: store.isActive,
+        isApproved: store.isApproved, isOpen: store.isOpen, isActive: store.isActive,
         photos: store.photos, createdAt: store.createdAt,
         owner: store.owner,
       },
@@ -251,8 +313,7 @@ exports.getStoreAnalytics = async (req, res) => {
     res.status(500).json({ success:false, message:"Server error" });
   }
 };
-// controllers/storeController.js — ADD this function to the existing file
-//
+
 // PUT /api/stores/admin/:id/remove
 // Soft-deletes a store (sets isActive: false) rather than a hard DB
 // delete — this preserves booking history, reviews, and analytics for
