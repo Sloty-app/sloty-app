@@ -23,6 +23,14 @@ mongoose.connect(process.env.MONGO_URI)
 
 const app = express();
 
+// Render (like most cloud hosts) sits in front of your app as a
+// reverse proxy — without this, express-rate-limit can't safely
+// determine a request's real IP from the X-Forwarded-For header and
+// throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. "1" trusts exactly one
+// proxy hop, matching Render's actual setup — not a blanket "trust
+// everything," which would let a malicious client fake their IP.
+app.set("trust proxy", 1);
+
 // Explicit CSP — the default helmet CSP would silently block Razorpay's
 // checkout script and Google's OAuth/Maps scripts (both loaded from
 // external domains), since it locks script-src to 'self' by default.
