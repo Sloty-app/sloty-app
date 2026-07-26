@@ -469,7 +469,7 @@ export default function CustomerApp() {
   // signup could be missing city, which store search/distance depend
   // on. Recomputed fresh from `user` each render rather than frozen at
   // mount, so it correctly clears the moment the profile is completed.
-  const hasPlaceholderEmail = /^\d{10}@(gmail|sloty)\.com$/i.test(user.email||"");
+  const hasPlaceholderEmail = /^\d{10}@sloty\.com$/i.test(user.email||"");
   const needsProfileCompletion = !user.city?.trim() || !user.phone?.trim() || hasPlaceholderEmail;
   const [profileForm,   setProfileForm]   = useState({ phone: user.phone||"", city: user.city||"", area: user.area||"", email: hasPlaceholderEmail?"":(user.email||"") });
   const [profileSaving, setProfileSaving] = useState(false);
