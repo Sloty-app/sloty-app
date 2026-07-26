@@ -1482,6 +1482,10 @@ export default function CustomerApp() {
           </>
         )}
 
+        <p style={{ fontSize:12, fontWeight:800, color:C.text, marginBottom:6 }}>LOCATION</p>
+        <LocationDetector onDetected={loc => setProfileForm(p => ({ ...p, city: loc.city || p.city, area: loc.area || p.area }))} />
+        <p style={{ fontSize:11, color:C.muted, marginTop:6, marginBottom:16 }}>Or enter manually below</p>
+
         <p style={{ fontSize:12, fontWeight:800, color:C.text, marginBottom:6 }}>CITY</p>
         <div style={{ display:"flex", alignItems:"center", gap:10, border:"2px solid #E8ECF5", borderRadius:12, padding:"12px 14px", marginBottom:16 }}>
           <MapPin size={16} color={C.pri} />
