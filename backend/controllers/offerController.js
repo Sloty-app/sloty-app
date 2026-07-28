@@ -13,8 +13,8 @@ exports.createOffer = async (req, res) => {
     const { title, description, discountType, discountValue, minBookingValue, maxDiscountAmount, applicableServices, validFrom, validUntil } = req.body;
 
     if (!title?.trim()) return res.status(400).json({ success:false, message:"Please give your offer a title" });
-    if (!["percentage","flat"].includes(discountType)) return res.status(400).json({ success:false, message:"Invalid discount type" });
-    if (!discountValue || discountValue <= 0) return res.status(400).json({ success:false, message:"Enter a valid discount amount" });
+    if (!["percentage","flat","free"].includes(discountType)) return res.status(400).json({ success:false, message:"Invalid discount type" });
+    if (discountType !== "free" && (!discountValue || discountValue <= 0)) return res.status(400).json({ success:false, message:"Enter a valid discount amount" });
     if (discountType === "percentage" && discountValue > 90) return res.status(400).json({ success:false, message:"Percentage discount can't exceed 90%" });
     if (!validFrom || !validUntil) return res.status(400).json({ success:false, message:"Please set a valid date range" });
     if (new Date(validUntil) <= new Date(validFrom)) return res.status(400).json({ success:false, message:"End date must be after start date" });
@@ -27,7 +27,9 @@ exports.createOffer = async (req, res) => {
       title: title.trim(),
       description: description?.trim() || "",
       discountType,
-      discountValue,
+      // "free" is always fully 100% off — this isn't something the
+      // owner enters, it's implied by choosing the type itself.
+      discountValue: discountType === "free" ? 100 : discountValue,
       minBookingValue: minBookingValue || 0,
       maxDiscountAmount: discountType === "percentage" ? (maxDiscountAmount || null) : null,
       applicableServices: applicableServices || [],
@@ -43,7 +45,7 @@ exports.createOffer = async (req, res) => {
     (async () => {
       try {
         const customers = await User.find({ role: "customer", city: new RegExp(`^${store.city}$`, "i") }).select("_id");
-        const discountLabel = discountType === "percentage" ? `${discountValue}% off` : `₹${discountValue} off`;
+        const discountLabel = discountType === "free" ? "FREE" : discountType === "percentage" ? `${discountValue}% off` : `₹${discountValue} off`;
         await Promise.allSettled(
           customers.map(c => sendNotification(
             c._id,
@@ -182,9 +184,11 @@ exports.computeOfferDiscount = async (offerId, storeId, services, subtotal) => {
     if (!matches) return 0;
   }
 
-  let discount = offer.discountType === "flat"
-    ? offer.discountValue
-    : Math.round(subtotal * (offer.discountValue / 100));
+  let discount = offer.discountType === "free"
+    ? subtotal
+    : offer.discountType === "flat"
+      ? offer.discountValue
+      : Math.round(subtotal * (offer.discountValue / 100));
 
   if (offer.discountType === "percentage" && offer.maxDiscountAmount) {
     discount = Math.min(discount, offer.maxDiscountAmount);

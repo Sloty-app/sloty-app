@@ -113,14 +113,14 @@ export default function StoreCard({ store, onSelect, onBook, isFavorite, onToggl
         {offer && (
           <div style={{
             position: "absolute", bottom: 10, left: 10, zIndex: 2,
-            background: "linear-gradient(100deg,#F97316,#EA580C)",
+            background: offer.discountType === "free" ? "linear-gradient(100deg,#00C9A7,#00A88C)" : "linear-gradient(100deg,#F97316,#EA580C)",
             borderRadius: 10, padding: "5px 10px",
             display: "flex", alignItems: "center", gap: 4,
-            boxShadow: "0 3px 10px rgba(234,88,12,0.4)",
+            boxShadow: offer.discountType === "free" ? "0 3px 10px rgba(0,168,140,0.4)" : "0 3px 10px rgba(234,88,12,0.4)",
           }}>
             <Tag size={11} color="#fff" />
             <span style={{ color: "#fff", fontSize: 11, fontWeight: 900 }}>
-              {offer.discountType === "percentage" ? `${offer.discountValue}% OFF` : `₹${offer.discountValue} OFF`}
+              {offer.discountType === "free" ? "FREE" : offer.discountType === "percentage" ? `${offer.discountValue}% OFF` : `₹${offer.discountValue} OFF`}
             </span>
           </div>
         )}

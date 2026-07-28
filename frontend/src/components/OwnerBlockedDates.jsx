@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { CalendarOff, Trash2, Plus } from "lucide-react";
 import { api } from "../api";
 import { C } from "../constants";
-import { Card, Btn, Input } from "./UI";
+import { Card, Btn, Input, Loader } from "./UI";
 
 // SectionHeader isn't part of the shared UI library — defined locally,
 // matching the same pattern used elsewhere (e.g. OwnerAnalytics.jsx).
@@ -16,36 +16,62 @@ const SectionHeader = ({ icon: Icon, title, color=C.pri }) => (
 );
 
 export default function OwnerBlockedDates() {
+  const [storeId,   setStoreId]   = useState(null);
   const [entries,   setEntries]   = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
   const [showForm,  setShowForm]  = useState(false);
   const [newDate,   setNewDate]   = useState("");
   const [wholeDay,  setWholeDay]  = useState(true);
-  const [newSlots,  setNewSlots]  = useState(""); // comma-separated, only used when wholeDay is false
+  const [selectedSlots, setSelectedSlots] = useState([]); // array of exact slot-time strings
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
   const [newReason, setNewReason] = useState("");
   const [err,       setErr]       = useState("");
 
   const fetchEntries = async () => {
     setLoading(true);
     try {
-      const res = await api("GET", "/bookings/store/blocked-dates");
-      setEntries(res.blockedDates || []);
+      const [entriesRes, storeRes] = await Promise.all([
+        api("GET", "/bookings/store/blocked-dates"),
+        api("GET", "/stores/owner/my-store"),
+      ]);
+      setEntries(entriesRes.blockedDates || []);
+      setStoreId(storeRes.store._id);
     } catch (e) { setErr(e.message); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { fetchEntries(); }, []);
 
+  // Fetches this store's real slot times for the picked date, the same
+  // source of truth the Slots tab and customer booking flow already
+  // use — so an owner picks from slots that actually exist, instead of
+  // typing a time string that has to happen to match exactly.
+  useEffect(() => {
+    if (!newDate || wholeDay || !storeId) { setAvailableSlots([]); return; }
+    setSlotsLoading(true);
+    setSelectedSlots([]); // date changed — previous picks no longer apply
+    api("GET", `/bookings/slots/${storeId}?date=${newDate}`)
+      .then(res => setAvailableSlots(res.slots || []))
+      .catch(() => setAvailableSlots([]))
+      .finally(() => setSlotsLoading(false));
+  }, [newDate, wholeDay, storeId]);
+
+  const toggleSlot = (time) => {
+    setSelectedSlots(s => s.includes(time) ? s.filter(t => t!==time) : [...s, time]);
+  };
+
   const resetForm = () => {
-    setNewDate(""); setWholeDay(true); setNewSlots(""); setNewReason(""); setShowForm(false);
+    setNewDate(""); setWholeDay(true); setSelectedSlots([]); setAvailableSlots([]); setNewReason(""); setShowForm(false);
   };
 
   const saveEntry = async () => {
     if (!newDate) { setErr("Please pick a date"); return; }
+    if (!wholeDay && selectedSlots.length === 0) { setErr("Select at least one time slot, or choose Whole Day Off instead"); return; }
     setSaving(true); setErr("");
     try {
-      const slots = wholeDay ? [] : newSlots.split(",").map(s => s.trim()).filter(Boolean);
+      const slots = wholeDay ? [] : selectedSlots;
       await api("POST", "/bookings/store/blocked-dates", { date: newDate, slots, reason: newReason });
       resetForm();
       fetchEntries();
@@ -115,12 +141,41 @@ export default function OwnerBlockedDates() {
           </div>
 
           {!wholeDay && (
-            <Input
-              label="Time slots (comma-separated, matching your slot times)"
-              value={newSlots}
-              onChange={e => setNewSlots(e.target.value)}
-              placeholder="e.g. 2:00 PM, 2:30 PM, 3:00 PM"
-            />
+            <div style={{ marginBottom:14 }}>
+              <label style={{ fontSize:11, fontWeight:800, color:C.muted, display:"block", marginBottom:8 }}>SELECT TIME SLOTS TO BLOCK</label>
+              {!newDate ? (
+                <p style={{ fontSize:12, color:C.muted, padding:"10px 0" }}>Pick a date above first</p>
+              ) : slotsLoading ? (
+                <div style={{ padding:"16px 0" }}><Loader /></div>
+              ) : availableSlots.length === 0 ? (
+                <p style={{ fontSize:12, color:C.muted, padding:"10px 0" }}>No slots found for this date — check your working hours are set.</p>
+              ) : (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {availableSlots.map(slot => {
+                    const isSelected = selectedSlots.includes(slot.time);
+                    const alreadyUnavailable = slot.isBlocked || slot.isBreak || slot.isBooked;
+                    return (
+                      <button
+                        key={slot.time}
+                        onClick={() => !alreadyUnavailable && toggleSlot(slot.time)}
+                        disabled={alreadyUnavailable}
+                        title={alreadyUnavailable ? (slot.isBooked ? "Already booked" : slot.isBlocked ? "Already blocked" : "Break time") : ""}
+                        style={{
+                          padding:"8px 14px", borderRadius:20,
+                          border:`1.5px solid ${isSelected?C.red:alreadyUnavailable?"#E8ECF5":"#D0D4E0"}`,
+                          background:isSelected?C.red+"15":alreadyUnavailable?"#F0F2F8":"#fff",
+                          color:isSelected?C.red:alreadyUnavailable?"#B8BCC8":C.text,
+                          fontSize:12, fontWeight:700, cursor:alreadyUnavailable?"not-allowed":"pointer",
+                          fontFamily:"'Nunito',sans-serif", opacity:alreadyUnavailable?0.6:1,
+                        }}
+                      >
+                        {slot.time}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
           <Input label="Reason (optional, shown to customers)" value={newReason} onChange={e => setNewReason(e.target.value)} placeholder="e.g. Diwali, Personal leave" />

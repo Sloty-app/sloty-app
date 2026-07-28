@@ -6,8 +6,11 @@ const OfferSchema = new mongoose.Schema({
   title:       { type: String, required: true, trim: true, maxlength: 60 },
   description: { type: String, trim: true, maxlength: 200, default: "" },
 
-  discountType:  { type: String, enum: ["percentage", "flat"], required: true },
-  discountValue: { type: Number, required: true, min: 1 },
+  discountType:  { type: String, enum: ["percentage", "flat", "free"], required: true },
+  // Not required when discountType is "free" — there's no meaningful
+  // number to enter (it's implicitly 100% off), so this is set
+  // automatically by the backend rather than collected from the owner.
+  discountValue: { type: Number, required: function() { return this.discountType !== "free"; }, min: 1 },
 
   // Discount only applies if the booking subtotal meets this minimum.
   minBookingValue: { type: Number, default: 0 },

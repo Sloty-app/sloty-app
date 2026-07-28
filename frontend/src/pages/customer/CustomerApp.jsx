@@ -1978,8 +1978,17 @@ export default function CustomerApp() {
             {storeOffers.map(o => (
               <div key={o._id} style={{ background:`linear-gradient(100deg,${C.pri}10,${C.pri}05)`, border:`1.5px dashed ${C.pri}44`, borderRadius:14, padding:"12px 14px", marginBottom:8 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
-                  {o.discountType==="percentage" ? <Percent size={13} color={C.pri} /> : <IndianRupee size={13} color={C.pri} />}
-                  <span style={{ fontSize:14, fontWeight:900, color:C.pri }}>{o.discountType==="percentage"?`${o.discountValue}% OFF`:`₹${o.discountValue} OFF`}</span>
+                  {o.discountType==="free" ? (
+                    <>
+                      <Gift size={13} color={C.green} />
+                      <span style={{ fontSize:14, fontWeight:900, color:C.green }}>FREE</span>
+                    </>
+                  ) : (
+                    <>
+                      {o.discountType==="percentage" ? <Percent size={13} color={C.pri} /> : <IndianRupee size={13} color={C.pri} />}
+                      <span style={{ fontSize:14, fontWeight:900, color:C.pri }}>{o.discountType==="percentage"?`${o.discountValue}% OFF`:`₹${o.discountValue} OFF`}</span>
+                    </>
+                  )}
                 </div>
                 <p style={{ fontSize:12, fontWeight:700, color:C.text, marginBottom:2 }}>{o.title}</p>
                 {o.description && <p style={{ fontSize:11, color:C.muted }}>{o.description}</p>}
@@ -2273,9 +2282,11 @@ export default function CustomerApp() {
               ? selServices.some(s => applicableOffer.applicableServices.includes(s.name))
               : true;
             if (namesMatch) {
-              offerDiscountPreview = applicableOffer.discountType === "flat"
-                ? applicableOffer.discountValue
-                : Math.round(totalServicePrice * (applicableOffer.discountValue/100));
+              offerDiscountPreview = applicableOffer.discountType === "free"
+                ? totalServicePrice
+                : applicableOffer.discountType === "flat"
+                  ? applicableOffer.discountValue
+                  : Math.round(totalServicePrice * (applicableOffer.discountValue/100));
               if (applicableOffer.discountType==="percentage" && applicableOffer.maxDiscountAmount) {
                 offerDiscountPreview = Math.min(offerDiscountPreview, applicableOffer.maxDiscountAmount);
               }
@@ -2291,8 +2302,8 @@ export default function CustomerApp() {
                 <div style={{ display:"flex", gap:8, overflowX:"auto", marginBottom:8, paddingBottom:2, scrollbarWidth:"none" }}>
                   {storeOffers.map(o => (
                     <button key={o._id} onClick={() => setSelectedOffer(id => id===o._id ? null : o._id)} style={{ flexShrink:0, display:"flex", alignItems:"center", gap:5, padding:"7px 12px", borderRadius:20, border:`1.5px solid ${selectedOffer===o._id?C.pri:"#E8ECF5"}`, background:selectedOffer===o._id?C.pri+"12":"#fff", cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
-                      <Tag size={11} color={selectedOffer===o._id?C.pri:C.muted} />
-                      <span style={{ fontSize:11, fontWeight:800, color:selectedOffer===o._id?C.pri:C.muted }}>{o.discountType==="percentage"?`${o.discountValue}% OFF`:`₹${o.discountValue} OFF`}</span>
+                      <Tag size={11} color={o.discountType==="free"?C.green:selectedOffer===o._id?C.pri:C.muted} />
+                      <span style={{ fontSize:11, fontWeight:800, color:o.discountType==="free"?C.green:selectedOffer===o._id?C.pri:C.muted }}>{o.discountType==="free"?"FREE":o.discountType==="percentage"?`${o.discountValue}% OFF`:`₹${o.discountValue} OFF`}</span>
                     </button>
                   ))}
                 </div>

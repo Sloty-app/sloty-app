@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Tag, Plus, X, Trash2, Power, Calendar, Percent, IndianRupee } from "lucide-react";
+import { Tag, Plus, X, Trash2, Power, Calendar, Percent, IndianRupee, Gift } from "lucide-react";
 import { C } from "../constants";
 import { api } from "../api";
 
@@ -43,7 +43,7 @@ export default function OwnerOffers({ services }) {
   const submitOffer = async () => {
     setErr("");
     if (!form.title.trim()) return setErr("Please give your offer a title");
-    if (!form.discountValue || Number(form.discountValue) <= 0) return setErr("Enter a valid discount amount");
+    if (form.discountType !== "free" && (!form.discountValue || Number(form.discountValue) <= 0)) return setErr("Enter a valid discount amount");
     if (!form.validFrom || !form.validUntil) return setErr("Please set a start and end date");
 
     setSaving(true);
@@ -103,8 +103,17 @@ export default function OwnerOffers({ services }) {
               <div style={{ flex:1 }}>
                 <p style={{ fontSize:14, fontWeight:900, color:C.text }}>{o.title}</p>
                 <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
-                  {o.discountType === "percentage" ? <Percent size={11} color={C.pri} /> : <IndianRupee size={11} color={C.pri} />}
-                  <span style={{ fontSize:12, fontWeight:800, color:C.pri }}>{o.discountType === "percentage" ? `${o.discountValue}% off` : `₹${o.discountValue} off`}</span>
+                  {o.discountType === "free" ? (
+                    <>
+                      <Gift size={11} color={C.green} />
+                      <span style={{ fontSize:12, fontWeight:800, color:C.green }}>FREE</span>
+                    </>
+                  ) : (
+                    <>
+                      {o.discountType === "percentage" ? <Percent size={11} color={C.pri} /> : <IndianRupee size={11} color={C.pri} />}
+                      <span style={{ fontSize:12, fontWeight:800, color:C.pri }}>{o.discountType === "percentage" ? `${o.discountValue}% off` : `₹${o.discountValue} off`}</span>
+                    </>
+                  )}
                   {o.minBookingValue > 0 && <span style={{ fontSize:11, color:C.muted }}>· min ₹{o.minBookingValue}</span>}
                 </div>
               </div>
@@ -155,12 +164,26 @@ export default function OwnerOffers({ services }) {
               <button onClick={() => setForm(f=>({...f,discountType:"flat"}))} style={{ flex:1, padding:"11px", borderRadius:12, border:`2px solid ${form.discountType==="flat"?C.pri:"#E8ECF5"}`, background:form.discountType==="flat"?C.pri+"10":"#fff", color:form.discountType==="flat"?C.pri:C.muted, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                 <IndianRupee size={14} /> Flat Amount
               </button>
+              <button onClick={() => setForm(f=>({...f,discountType:"free"}))} style={{ flex:1, padding:"11px", borderRadius:12, border:`2px solid ${form.discountType==="free"?C.green:"#E8ECF5"}`, background:form.discountType==="free"?C.green+"10":"#fff", color:form.discountType==="free"?C.green:C.muted, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                <Gift size={14} /> Free
+              </button>
             </div>
 
-            <label style={{ fontSize:11, fontWeight:800, color:C.muted, display:"block", marginBottom:5 }}>
-              {form.discountType==="percentage" ? "DISCOUNT PERCENTAGE" : "DISCOUNT AMOUNT (₹)"}
-            </label>
-            <input value={form.discountValue} onChange={e=>setForm(f=>({...f,discountValue:e.target.value.replace(/\D/g,"")}))} onWheel={e=>e.target.blur()} type="number" placeholder={form.discountType==="percentage"?"20":"50"} style={{ width:"100%", padding:"12px 14px", border:"2px solid #E8ECF5", borderRadius:12, fontSize:14, fontFamily:"'Nunito',sans-serif", marginBottom:14, boxSizing:"border-box" }} />
+            {form.discountType !== "free" && (
+              <>
+                <label style={{ fontSize:11, fontWeight:800, color:C.muted, display:"block", marginBottom:5 }}>
+                  {form.discountType==="percentage" ? "DISCOUNT PERCENTAGE" : "DISCOUNT AMOUNT (₹)"}
+                </label>
+                <input value={form.discountValue} onChange={e=>setForm(f=>({...f,discountValue:e.target.value.replace(/\D/g,"")}))} onWheel={e=>e.target.blur()} type="number" placeholder={form.discountType==="percentage"?"20":"50"} style={{ width:"100%", padding:"12px 14px", border:"2px solid #E8ECF5", borderRadius:12, fontSize:14, fontFamily:"'Nunito',sans-serif", marginBottom:14, boxSizing:"border-box" }} />
+              </>
+            )}
+
+            {form.discountType === "free" && (
+              <div style={{ background:C.green+"12", borderRadius:12, padding:"12px 14px", marginBottom:14, display:"flex", gap:8, alignItems:"flex-start" }}>
+                <Gift size={14} color={C.green} style={{ flexShrink:0, marginTop:1 }} />
+                <p style={{ fontSize:12, color:C.green, fontWeight:700, lineHeight:1.4 }}>Selected service(s) will be completely free for customers during the dates you set below — nothing to pay at all.</p>
+              </div>
+            )}
 
             {form.discountType === "percentage" && (
               <>

@@ -7,6 +7,7 @@ import OwnerOffers from "../../components/OwnerOffers";
 import OwnerMessages from "../../components/OwnerMessages";
 import OwnerAnalytics from "../../components/OwnerAnalytics";
 import OwnerBlockedDates from "../../components/OwnerBlockedDates";
+import OwnerBreakTimes from "../../components/OwnerBreakTimes";
 import { getISTDateString, getISTNow, getNext7Days } from "../../utils/date";
 import { getSocket, joinRoom, leaveRoom } from "../../utils/socket";
 import { playChime } from "../../utils/sound";
@@ -125,6 +126,18 @@ function ordinal(n) {
   if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
   const rem10 = n % 10;
   return `${n}${rem10===1?"st":rem10===2?"nd":rem10===3?"rd":"th"}`;
+}
+
+// Converts "9:00 AM" / "2:30 PM" style strings to minutes-since-midnight.
+// Needed anywhere bookings/slots need real overlap math instead of
+// alphabetical or exact-string comparison, since "2:00 PM" < "10:30 AM"
+// as plain strings even though it's chronologically later.
+function slotTimeToMinutes(t) {
+  const [time, period] = t.split(" ");
+  let [h, m] = time.split(":").map(Number);
+  if (period === "PM" && h !== 12) h += 12;
+  if (period === "AM" && h === 12) h = 0;
+  return h * 60 + m;
 }
 
 const StatCard = ({ icon: Icon, value, label, color, onClick }) => (
@@ -580,40 +593,6 @@ function OwnerSettings({ myStore, onUpdate, user }) {
       />
 
       <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-          <SectionHeader icon={Coffee} title="Break Times" color={C.acc} />
-          <SectionEditToggle isEditing={editing.breaks} onToggle={() => toggleEdit("breaks")} />
-        </div>
-        <LockableSection isEditing={editing.breaks}>
-        {(form.breakTimes||[]).map((b,i) => (
-          <div key={i} style={{ background:C.inputBg, borderRadius:12, padding:12, marginBottom:10, border:"2px solid #E8ECF5" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-              <span style={{ fontSize:11, fontWeight:800, color:C.muted }}>BREAK {i+1}</span>
-              <button onClick={() => setForm(f=>({...f,breakTimes:f.breakTimes.filter((_,j)=>j!==i)}))} style={{ background:C.red+"15", color:C.red, border:"none", borderRadius:8, padding:"4px 10px", cursor:"pointer", fontWeight:800, fontSize:11, fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:4 }}>
-                <Trash2 size={11} /> Remove
-              </button>
-            </div>
-            <input value={b.label||""} onChange={e=>setForm(f=>({...f,breakTimes:f.breakTimes.map((x,j)=>j===i?{...x,label:e.target.value}:x)}))} placeholder="e.g. Lunch Break" style={{ width:"100%", padding:"10px 14px", border:"2px solid #E8ECF5", borderRadius:10, fontSize:13, fontFamily:"'Nunito',sans-serif", marginBottom:10, boxSizing:"border-box", background:C.inputBg }} />
-            <div style={{ display:"flex", gap:10 }}>
-              {timeInput("FROM", b.open||"",  e=>setForm(f=>({...f,breakTimes:f.breakTimes.map((x,j)=>j===i?{...x,open:e.target.value}:x)})))}
-              {timeInput("TO",   b.close||"", e=>setForm(f=>({...f,breakTimes:f.breakTimes.map((x,j)=>j===i?{...x,close:e.target.value}:x)})))}
-            </div>
-          </div>
-        ))}
-        <button onClick={() => setForm(f=>({...f,breakTimes:[...(f.breakTimes||[]),{open:"",close:"",label:""}]}))} style={{ padding:"10px 20px", background:C.acc+"18", color:"#B8860B", border:`2px dashed ${C.acc}`, borderRadius:12, cursor:"pointer", fontWeight:800, fontFamily:"'Nunito',sans-serif", fontSize:13, width:"100%", marginTop:4, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-          <Plus size={14} /> Add Break Time
-        </button>
-        </LockableSection>
-        <SectionSaveButton
-          status={sectionStatus.breaks}
-          disabled={!editing.breaks}
-          onSave={() => saveSection("breaks", { breakTimes: form.breakTimes })}
-        />
-      </Card>
-
-      <OwnerBlockedDates />
-
-      <Card>
         <SectionHeader icon={MessageCircle} title="Help & Support" color={C.blue} />
         <div style={{ display:"flex", gap:8, marginBottom:14 }}>
           <a href="tel:+918317588958" style={{ flex:1, textDecoration:"none" }}>
@@ -733,6 +712,38 @@ export default function OwnerApp() {
   const [showActivity, setShowActivity] = useState(false);
   const [activity, setActivity] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [gridDate, setGridDate] = useState(() => getISTDateString());
+  const [showManageSlots, setShowManageSlots] = useState(false);
+  // Lets the socket refresh callback below always see the CURRENT tab
+  // and date without needing to re-run the whole socket setup/teardown
+  // (joining/leaving rooms, attaching listeners) every time either one
+  // changes — the effect itself only depends on myStore/user, exactly
+  // as it did before this was added.
+  const slotsViewRef = useRef({ tab, gridDate: getISTDateString() });
+  useEffect(() => { slotsViewRef.current = { tab, gridDate }; }, [tab, gridDate]);
+  const [gridSlots, setGridSlots] = useState([]);
+  const [gridLoading, setGridLoading] = useState(false);
+  const [slotBookings, setSlotBookings] = useState(null); // { time, bookings: [...] } | null
+
+  // Reuses the same /bookings/slots endpoint customers use to see
+  // availability — same source of truth for what counts as a slot,
+  // what's blocked, what's on break. This deliberately does NOT
+  // duplicate that generation logic on the frontend, since blocked
+  // dates, break times, and capacity all live there already.
+  const fetchGridSlots = async (date) => {
+    if (!myStore) return;
+    setGridLoading(true);
+    try {
+      const res = await api("GET", `/bookings/slots/${myStore._id}?date=${date}`);
+      setGridSlots(res.slots || []);
+    } catch (e) {
+      setGridSlots([]);
+    } finally {
+      setGridLoading(false);
+    }
+  };
+
+  useEffect(() => { if (tab === "slots" && myStore) fetchGridSlots(gridDate); }, [tab, gridDate, myStore]);
 
   // Fetched on-demand when the feed is opened, not automatically on
   // every dashboard load — this is a "check when I actually want to"
@@ -882,6 +893,11 @@ export default function OwnerApp() {
       const from7 = getISTDateString(next7[0]);
       const to7   = getISTDateString(next7[6]);
       api("GET", `/bookings/store/${myStore._id}?from=${from7}&to=${to7}`).then(r => setBookings(r.bookings||[])).catch(()=>{});
+      // Also refresh the slots grid — but only if the owner is
+      // actually looking at it right now, so a booking made while
+      // they're on the Dashboard doesn't trigger a wasted fetch for a
+      // tab that isn't even open.
+      if (slotsViewRef.current.tab === "slots") fetchGridSlots(slotsViewRef.current.gridDate);
     };
 
     const onNewBooking = (payload) => {
@@ -946,6 +962,7 @@ export default function OwnerApp() {
     { key:"dashboard", icon:LayoutDashboard, label:"Dashboard" },
     { key:"queue",     icon:ListOrdered,     label:"Queue"     },
     { key:"bookings",  icon:ClipboardList,   label:"Bookings"  },
+    { key:"slots",     icon:CalendarDays,    label:"Slots"     },
     { key:"offers",    icon:Tag,             label:"Offers"    },
     { key:"messages",  icon:MessageCircle,   label:"Messages"  },
     { key:"history",   icon:History,         label:"History"   },
@@ -1482,6 +1499,95 @@ export default function OwnerApp() {
           </div>
         )}
 
+        {/* ── Slots ── */}
+        {tab==="slots" && (
+          <div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+              <h3 style={{ fontSize:16, fontWeight:900, color:C.text }}>Slots</h3>
+              <span style={{ fontSize:12, color:C.muted }}>Tap a slot to see who's booked</span>
+            </div>
+
+            <button onClick={() => setShowManageSlots(true)} style={{ width:"100%", padding:"12px", marginBottom:16, background:C.pri+"10", color:C.pri, border:`1.5px solid ${C.pri}33`, borderRadius:14, fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+              <Settings size={14} /> Manage Slots — Blocked Dates & Break Times
+            </button>
+
+            {/* Date selector — next 7 days, matching the same window
+                the Bookings tab already fetches, so switching dates
+                here never needs a separate range fetch. */}
+            <div style={{ display:"flex", gap:8, overflowX:"auto", marginBottom:16, paddingBottom:4, scrollbarWidth:"none" }}>
+              {getNext7Days().map(d => {
+                const dateStr = getISTDateString(d);
+                const isSelected = dateStr === gridDate;
+                const isToday = dateStr === today;
+                return (
+                  <button key={dateStr} onClick={() => setGridDate(dateStr)} style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"10px 14px", borderRadius:14, border:`2px solid ${isSelected?C.pri:"#E8ECF5"}`, background:isSelected?C.pri:"#fff", cursor:"pointer", fontFamily:"'Nunito',sans-serif", minWidth:56 }}>
+                    <span style={{ fontSize:10, fontWeight:800, color:isSelected?"#fff":C.muted }}>{isToday ? "TODAY" : d.toLocaleDateString("en-IN",{weekday:"short"}).toUpperCase()}</span>
+                    <span style={{ fontSize:15, fontWeight:900, color:isSelected?"#fff":C.text }}>{d.getDate()}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {gridLoading ? (
+              <div style={{ textAlign:"center", padding:"40px 0" }}><Loader /></div>
+            ) : gridSlots.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"40px 0" }}>
+                <p style={{ color:C.muted, fontWeight:700 }}>No slots configured for this day</p>
+              </div>
+            ) : (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:20 }}>
+                {gridSlots.map(slot => {
+                  // Grid interval — the gap between consecutive slot
+                  // times (e.g. 30 min) — used below to give each grid
+                  // cell a real start/end range, not just a single point
+                  // in time.
+                  const gridIntervalMin = gridSlots.length > 1
+                    ? slotTimeToMinutes(gridSlots[1].time) - slotTimeToMinutes(gridSlots[0].time)
+                    : 30;
+                  const slotStart = slotTimeToMinutes(slot.time);
+                  const slotEnd = slotStart + gridIntervalMin;
+
+                  // Real overlap check, not exact-string matching — a
+                  // 60-minute service booked at 9:00 AM genuinely
+                  // occupies the 9:30 grid cell too, even though that
+                  // booking's own timeSlot field only ever says "9:00
+                  // AM". This is exactly what was making some booked
+                  // slots silently look Open, and taps on them show
+                  // nothing — this fixes both at the source.
+                  const slotBookingsHere = bookings.filter(b => {
+                    if (b.date !== gridDate || b.status === "cancelled") return false;
+                    const bStart = slotTimeToMinutes(b.timeSlot);
+                    const bEnd = bStart + (b.service?.duration || gridIntervalMin);
+                    return bStart < slotEnd && bEnd > slotStart;
+                  });
+                  // Backend's own isBooked flag (from the same overlap
+                  // logic, server-side) is trusted as the primary
+                  // signal — the cross-reference above is now just as
+                  // accurate, but keeping both means a mismatch would
+                  // still show the slot as booked with a fallback
+                  // message, rather than silently looking like Open.
+                  const isBooked = slot.isBooked || slotBookingsHere.length > 0;
+                  const bg = slot.isBlocked || slot.isBreak ? "#F0F2F8" : isBooked ? C.red+"12" : C.green+"12";
+                  const border = slot.isBlocked || slot.isBreak ? "#E8ECF5" : isBooked ? C.red+"33" : C.green+"33";
+                  const textColor = slot.isBlocked || slot.isBreak ? C.muted : isBooked ? C.red : C.green;
+                  return (
+                    <button
+                      key={slot.time}
+                      onClick={() => isBooked && setSlotBookings({ time: slot.time, bookings: slotBookingsHere })}
+                      style={{ padding:"10px 6px", borderRadius:12, border:`1.5px solid ${border}`, background:bg, cursor:isBooked?"pointer":"default", fontFamily:"'Nunito',sans-serif", textAlign:"center" }}
+                    >
+                      <p style={{ fontSize:12, fontWeight:800, color:textColor, marginBottom:2 }}>{slot.time}</p>
+                      <p style={{ fontSize:9, fontWeight:700, color:textColor }}>
+                        {slot.isBlocked ? "Blocked" : slot.isBreak ? "Break" : isBooked ? (slotBookingsHere.length ? `${slotBookingsHere.length} booked` : "Booked") : "Open"}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Offers ── */}
         {tab==="offers" && <OwnerOffers services={myStore?.services} />}
 
@@ -1693,6 +1799,26 @@ export default function OwnerApp() {
             ))}
           </div>
         )}
+      </BottomSheet>
+
+      <BottomSheet open={!!slotBookings} onClose={() => setSlotBookings(null)} title={slotBookings ? (slotBookings.bookings.length ? `${slotBookings.time} — ${slotBookings.bookings.length} booked` : slotBookings.time) : "Slot"}>
+        {slotBookings && slotBookings.bookings.length === 0 && (
+          <p style={{ fontSize:13, color:C.muted, textAlign:"center", padding:"20px 0" }}>This slot is marked booked, but the customer details couldn't be matched — check the Bookings tab for this date directly.</p>
+        )}
+        {slotBookings && slotBookings.bookings.map(b => (
+          <div key={b._id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"11px 0", borderBottom:"1px solid #F0F2F8" }}>
+            <div>
+              <p onClick={() => { setSlotBookings(null); openCustomerHistory(b.customerName, b.customerPhone); }} style={{ fontSize:14, fontWeight:800, color:C.text, cursor:"pointer" }}>{b.customerName}</p>
+              <p style={{ fontSize:11, color:C.muted, marginTop:2 }}>{b.customerPhone} · {b.service?.name}{b.staffName?` · ${b.staffName}`:""}</p>
+            </div>
+            <Badge color={b.status==="completed"?C.green:b.status==="in_progress"?C.pri:C.blue} text={b.status.replace("_"," ")} />
+          </div>
+        ))}
+      </BottomSheet>
+
+      <BottomSheet open={showManageSlots} onClose={() => { setShowManageSlots(false); fetchGridSlots(gridDate); }} title="Manage Slots">
+        <OwnerBlockedDates />
+        <OwnerBreakTimes />
       </BottomSheet>
     </div>
   );
