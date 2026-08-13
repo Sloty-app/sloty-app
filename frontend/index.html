@@ -2,22 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#FF5E7D" />
+    <meta name="theme-color" content="#F0F2F8" />
     <meta name="description" content="Sloty — Skip the wait. Book your slot at salons, clinics, and services near you." />
 
     <!-- PWA manifest — enables "Add to Home Screen" on Android/Chrome -->
     <link rel="manifest" href="/manifest.json" />
 
     <!-- iOS-specific "Add to Home Screen" support — iOS does NOT read
-         manifest.json at all, it needs these tags instead. -->
-    <link rel="icon" type="image/x-icon" href="/files/favicon.ico" />
-    <link rel="apple-touch-icon" href="/files/apple-touch-icon.png" />
+         manifest.json at all, it needs these tags instead. apple-touch-icon
+         needs a real PNG file added at /apple-touch-icon.png (180x180
+         recommended) — falls back to a browser-generated icon until then,
+         so this is safe to ship as-is, just not ideal looking on iOS yet. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Sloty" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
+
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <title>Sloty — Skip the Wait</title>
   </head>
