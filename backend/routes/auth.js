@@ -3,7 +3,7 @@ const router = require("express").Router();
 const {
   register, login, getMe, updateProfile, changePassword,
   toggleFavorite, getFavorites, sendOtp, verifyOtpLogin,
-deleteAccount} = require("../controllers/authController");
+deleteAccount, verifyFirebaseLogin } = require("../controllers/authController");
 const { googleLogin } = require("../controllers/googleAuth");
 const { protect } = require("../middleware/auth");
 
@@ -11,7 +11,8 @@ router.post("/register",        register);
 router.post("/login",           login);
 router.post("/google",          googleLogin);
 router.post("/send-otp",        sendOtp);        // public — phone+OTP login (customers)
-router.post("/verify-otp",      verifyOtpLogin);  // public — phone+OTP login (customers)
+router.post("/verify-otp",      verifyOtpLogin);
+router.post("/firebase-login", verifyFirebaseLogin);  // public — phone+OTP login (customers)
 router.get ("/me",              protect, getMe);
 router.put ("/update-profile",  protect, updateProfile);
 router.get ("/favorites",       protect, getFavorites);

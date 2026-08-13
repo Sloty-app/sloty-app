@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
 import { C } from "../constants";
 import { MapPicker, LocationDetector } from "../components/UI";
+import { auth } from "../firebase";
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 import {
   ArrowLeft, Mail, Lock, User, Phone, MapPin,
   Eye, EyeOff, LogIn, UserPlus, Store, Shield,
@@ -65,10 +67,13 @@ function IconInput({ icon: Icon, label, type="text", value, onChange, placeholde
 }
 
 /* ── Phone + OTP flow — used by both Customers and Store Owners.
-   Each role's OTP requests/verifications are scoped server-side by
-   `role`, so the same phone number can hold a separate account for
-   each — an owner logging in here never collides with (or logs into)
-   their own customer account on the same number. ── */
+   OTP is now handled entirely by Firebase Phone Auth (real SMS,
+   client-side verification) rather than the app's own backend —
+   the backend only gets involved AFTER Firebase has already
+   confirmed the phone number, to independently verify that
+   confirmation and issue Sloty's own session token. Each role's
+   account is still scoped server-side by `role`, so the same phone
+   number can hold a separate account for each. ── */
 function GoogleSignInButton({ onSuccess, onError }) {
   const login = useGoogleLogin({ onSuccess, onError, flow:"implicit" });
   return (
@@ -85,15 +90,17 @@ function GoogleSignInButton({ onSuccess, onError }) {
 }
 
 function CustomerOtpAuth({ cfg, role, onSuccess }) {
-  const [step,      setStep]      = useState("phone"); // "phone" | "otp"
+  const [step,      setStep]      = useState("phone"); // "phone" | "otp" | "name"
   const [phone,     setPhone]     = useState("");
   const [otp,       setOtp]       = useState("");
   const [name,      setName]      = useState("");
-  const [isNewUser, setIsNewUser] = useState(false);
-  const [devOtp,    setDevOtp]    = useState(null);
   const [err,       setErr]       = useState("");
   const [loading,   setLoading]   = useState(false);
   const [cooldown,  setCooldown]  = useState(0);
+
+  const confirmationRef = useRef(null);
+  const recaptchaRef = useRef(null);
+  const idTokenRef = useRef(null);
 
   const handleGoogleSuccess = async (tokenResponse) => {
     try {
@@ -110,46 +117,91 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
     return () => clearTimeout(t);
   }, [cooldown]);
 
+  const getRecaptcha = () => {
+    if (!recaptchaRef.current) {
+      recaptchaRef.current = new RecaptchaVerifier(auth, "recaptcha-container", {
+        size: "invisible",
+      });
+    }
+    return recaptchaRef.current;
+  };
+
   const sendOtp = async () => {
     setErr("");
     if (!/^[6-9]\d{9}$/.test(phone)) return setErr("Enter a valid 10-digit mobile number");
     setLoading(true);
     try {
-      const res = await api("POST", "/auth/send-otp", { phone, role });
-      setIsNewUser(res.isNewUser);
-      setDevOtp(res.devOtp || null);
+      const verifier = getRecaptcha();
+      const result = await signInWithPhoneNumber(auth, `+91${phone}`, verifier);
+      confirmationRef.current = result;
+      setOtp("");
       setStep("otp");
       setCooldown(45);
-    } catch (e) { setErr(e.message); }
+    } catch (e) {
+      console.error(e);
+      setErr(e.code === "auth/too-many-requests" ? "Too many attempts — please wait a while and try again" : "Could not send OTP. Please check the number and try again.");
+    }
     finally { setLoading(false); }
   };
 
-  // Web OTP API — Android Chrome auto-reads the SMS and fills the input.
-  // Falls back gracefully on iOS/desktop (where it's not supported).
   useEffect(() => {
     if (step !== "otp") return;
-    if (!("OTPCredential" in window)) return; // not supported, skip silently
+    if (!("OTPCredential" in window)) return;
     const ac = new AbortController();
     navigator.credentials.get({ otp: { transport: ["sms"] }, signal: ac.signal })
       .then(cred => { if (cred?.code) setOtp(cred.code); })
-      .catch(() => {}); // user dismissed or timed out — not an error
+      .catch(() => {});
     return () => ac.abort();
   }, [step]);
 
+  const loginToBackend = async (withName) => {
+    const res = await api("POST", "/auth/firebase-login", {
+      idToken: idTokenRef.current,
+      role,
+      name: withName || undefined,
+    });
+    onSuccess(res);
+  };
+
   const verifyOtp = async () => {
     setErr("");
-    if (otp.length !== 4) return setErr("Enter the 4-digit OTP");
-    if (isNewUser && !name.trim()) return setErr("Please enter your name");
+    if (otp.length !== 6) return setErr("Enter the 6-digit OTP");
+    if (!confirmationRef.current) return setErr("Session expired — please request a new OTP");
     setLoading(true);
     try {
-      const res = await api("POST", "/auth/verify-otp", { phone, otp, name: isNewUser ? name : undefined, role });
-      onSuccess(res);
-    } catch (e) { setErr(e.message); }
+      const result = await confirmationRef.current.confirm(otp);
+      idTokenRef.current = await result.user.getIdToken();
+      await loginToBackend();
+    } catch (e) {
+      if (e.message && /enter your name/i.test(e.message)) {
+        setStep("name");
+      } else if (e.code === "auth/invalid-verification-code") {
+        setErr("Incorrect OTP. Please try again.");
+      } else if (e.code === "auth/code-expired") {
+        setErr("OTP expired. Please request a new one.");
+      } else {
+        setErr(e.message || "Verification failed. Please try again.");
+      }
+    }
+    finally { setLoading(false); }
+  };
+
+  const submitName = async () => {
+    setErr("");
+    if (!name.trim()) return setErr("Please enter your name");
+    setLoading(true);
+    try {
+      await loginToBackend(name);
+    } catch (e) {
+      setErr(e.message || "Could not create account. Please try again.");
+    }
     finally { setLoading(false); }
   };
 
   return (
     <div style={{ background:"#fff", borderRadius:20, padding:"20px 16px", boxShadow:"0 4px 24px rgba(0,0,0,0.06)", marginBottom:14 }}>
+      <div id="recaptcha-container" />
+
       {step === "phone" && (
         <>
           <p style={{ fontSize:13, color:C.muted, marginBottom:16, textAlign:"center" }}>Enter your mobile number to continue</p>
@@ -177,32 +229,21 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
             Change number
           </button>
 
-          {devOtp && (
-            <div style={{ background:C.acc+"18", border:`1.5px dashed ${C.acc}`, borderRadius:12, padding:"10px 14px", marginBottom:14, textAlign:"center" }}>
-              <p style={{ fontSize:11, color:"#B8860B", fontWeight:700 }}>DEV MODE — no SMS provider configured yet</p>
-              <p style={{ fontSize:20, fontWeight:900, color:"#B8860B", letterSpacing:6, marginTop:2 }}>{devOtp}</p>
-            </div>
-          )}
-
-          {isNewUser && (
-            <IconInput icon={User} label="YOUR NAME" placeholder="Full name" value={name} onChange={e=>setName(e.target.value)} color={cfg.accent} />
-          )}
-
           <div style={{ marginBottom:16 }}>
             <label style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, display:"block", marginBottom:8 }}>ENTER OTP</label>
             <input
               value={otp}
-              onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,4))}
+              onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))}
               type="tel"
               inputMode="numeric"
-              maxLength={4}
-              placeholder="– – – –"
+              maxLength={6}
+              placeholder="– – – – – –"
               autoComplete="one-time-code"
               autoFocus
               style={{
                 width:"100%", padding:"14px 0", textAlign:"center",
-                border:`2px solid ${otp.length===4?cfg.accent:"#E8ECF5"}`,
-                borderRadius:14, fontSize:26, fontWeight:900, letterSpacing:14,
+                border:`2px solid ${otp.length===6?cfg.accent:"#E8ECF5"}`,
+                borderRadius:14, fontSize:24, fontWeight:900, letterSpacing:10,
                 color:C.text, background:"#F8FAFF", outline:"none",
                 fontFamily:"'Nunito',sans-serif", boxSizing:"border-box",
                 transition:"all 0.2s",
@@ -218,7 +259,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
           )}
 
           <button onClick={verifyOtp} disabled={loading} style={{ width:"100%", padding:"15px", background:loading?"#E0E4EF":cfg.gradient, color:loading?"#AAB":"#fff", border:"none", borderRadius:14, fontSize:15, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:12, boxShadow:loading?"none":"0 6px 24px rgba(0,0,0,0.2)" }}>
-            {loading ? "Verifying..." : <><LogIn size={17} /> {isNewUser ? "Create Account" : "Verify & Sign In"}</>}
+            {loading ? "Verifying..." : <><LogIn size={17} /> Verify & Continue</>}
           </button>
 
           <button onClick={sendOtp} disabled={cooldown > 0 || loading} style={{ width:"100%", padding:"10px", background:"none", border:"none", color:cooldown>0?C.muted:cfg.accent, fontSize:12, fontWeight:800, cursor:cooldown>0?"default":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
@@ -227,10 +268,25 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
         </>
       )}
 
-      {/* Now available for both customers and owners — the /auth/google
-          backend endpoint has been made role-aware, matching the same
-          (email, role) account-separation model as phone/OTP login. */}
-      {GOOGLE_CLIENT_ID && (role === "customer" || role === "owner") && (
+      {step === "name" && (
+        <>
+          <p style={{ fontSize:13, color:C.muted, marginBottom:16, textAlign:"center" }}>Phone verified! What should we call you?</p>
+          <IconInput icon={User} label="YOUR NAME" placeholder="Full name" value={name} onChange={e=>setName(e.target.value)} color={cfg.accent} autoFocus />
+
+          {err && (
+            <div style={{ background:C.red+"12", border:`1.5px solid ${C.red}33`, borderRadius:12, padding:"11px 14px", marginBottom:14, display:"flex", gap:10, alignItems:"center" }}>
+              <AlertCircle size={15} color={C.red} />
+              <p style={{ color:C.red, fontSize:13, fontWeight:700 }}>{err}</p>
+            </div>
+          )}
+
+          <button onClick={submitName} disabled={loading} style={{ width:"100%", padding:"15px", background:loading?"#E0E4EF":cfg.gradient, color:loading?"#AAB":"#fff", border:"none", borderRadius:14, fontSize:15, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:10, boxShadow:loading?"none":"0 6px 24px rgba(0,0,0,0.2)" }}>
+            {loading ? "Creating account..." : <><UserPlus size={17} /> Create Account</>}
+          </button>
+        </>
+      )}
+
+      {GOOGLE_CLIENT_ID && (role === "customer" || role === "owner") && step === "phone" && (
         <div style={{ marginTop:16 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
             <div style={{ flex:1, height:1, background:"#E8ECF5" }} />
@@ -291,19 +347,11 @@ export default function Auth() {
     navigate("/");
   };
 
-  // Both customers and owners now sign in via phone + OTP, matching
-  // how Swiggy/Zomato/Practo onboard both riders and delivery partners
-  // through the same passwordless mechanism. Admin still uses the
-  // original email+password flow — deliberately unchanged, since admin
-  // access is already meant to be a separate, more deliberate path
-  // (URL-only, no public entry point), not something to make easier to
-  // reach via a quick phone OTP.
   const usesOtpFlow = role === "customer" || role === "owner";
 
   return (
     <div style={{ minHeight:"100vh", background:"#F0F2F8", fontFamily:"'Nunito',sans-serif", display:"flex", flexDirection:"column" }}>
 
-      {/* ── Hero ── */}
       <div style={{ background:cfg.gradient, padding:"52px 24px 56px", position:"relative", overflow:"hidden" }}>
         <div style={{ position:"absolute", top:-40, right:-40, width:160, height:160, borderRadius:"50%", background:"rgba(255,255,255,0.05)" }} />
         <div style={{ position:"absolute", bottom:-20, left:-30, width:100, height:100, borderRadius:"50%", background:"rgba(255,255,255,0.04)" }} />
@@ -327,14 +375,11 @@ export default function Auth() {
         </div>
       </div>
 
-      {/* ── Form card ── */}
       <div style={{ flex:1, background:"#F0F2F8", marginTop:-24, borderTopLeftRadius:28, borderTopRightRadius:28, padding:"24px 20px 60px", overflowY:"auto" }}>
 
         {usesOtpFlow ? (
-          /* ── Customers & Owners: phone + OTP, no password at all ── */
           <CustomerOtpAuth cfg={cfg} role={role} onSuccess={handleOtpSuccess} />
         ) : (
-          /* ── Admin only: existing email + password flow, unchanged ── */
           <>
             {role !== "admin" && (
               <div style={{ display:"flex", background:"#E4E8F0", borderRadius:16, padding:4, marginBottom:24 }}>
@@ -418,7 +463,6 @@ export default function Auth() {
           </>
         )}
 
-        {/* Demo accounts — admin only now that both customers and owners use OTP */}
         {!usesOtpFlow && (
           <div style={{ background:C.sec, borderRadius:18, padding:"14px 16px", border:"1px solid rgba(255,255,255,0.06)" }}>
             <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:12 }}>

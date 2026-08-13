@@ -148,6 +148,7 @@ const bcrypt   = require("bcryptjs");
 const crypto   = require("crypto");
 const PhoneOtp = require("../models/PhoneOtp");
 const { sendOtpSms } = require("../config/sms");
+const { getFirebaseAuth } = require("../config/firebaseAdmin");
 
 const OTP_COOLDOWN_MS = 45 * 1000;   // min gap between consecutive OTP requests for the same number
 const OTP_EXPIRY_MS   = 5 * 60 * 1000;
@@ -267,6 +268,72 @@ exports.verifyOtpLogin = async (req, res) => {
     sendToken(user, isNewAccount ? 201 : 200, res, isNewAccount ? "Welcome to Sloty! 🎉" : `Welcome back, ${user.name}! 👋`);
   } catch (err) {
     console.error("VERIFY OTP ERROR:", err.message);
+    if (err.name === "ValidationError") return res.status(400).json({ success:false, message: Object.values(err.errors)[0].message });
+    if (err.code === 11000) return res.status(400).json({ success:false, message:"This phone number is already registered." });
+    res.status(500).json({ success:false, message:"Server error" });
+  }
+};
+
+// POST /api/auth/firebase-login
+// Called after Firebase's own client-side phone verification succeeds.
+// The frontend never gets to just assert "this phone is verified" —
+// it hands over the Firebase ID token, and this independently verifies
+// that token against Firebase's servers before trusting the phone
+// number it contains at all. Same trust boundary as Google Sign-In:
+// never take the client's word for an identity claim.
+exports.verifyFirebaseLogin = async (req, res) => {
+  try {
+    const { idToken, name } = req.body;
+    const role = req.body.role === "owner" ? "owner" : "customer"; // never trust "admin" here
+    if (!idToken) return res.status(400).json({ success:false, message:"Missing verification token" });
+
+    let decoded;
+    try {
+      decoded = await getFirebaseAuth().verifyIdToken(idToken);
+    } catch (err) {
+      return res.status(401).json({ success:false, message:"Verification failed or expired. Please try again." });
+    }
+
+    // Firebase returns phone numbers in E.164 format (+91XXXXXXXXXX) —
+    // strip the country code to match the 10-digit format used
+    // everywhere else in the app (User.phone, PhoneOtp, etc.).
+    const rawPhone = decoded.phone_number || "";
+    const phone = rawPhone.replace(/^\+91/, "");
+    if (!/^[6-9]\d{9}$/.test(phone)) {
+      return res.status(400).json({ success:false, message:"Could not read a valid Indian phone number from verification." });
+    }
+
+    let user = await User.findOne({ phone, role });
+    let isNewAccount = false;
+
+    if (!user) {
+      if (!name || !name.trim()) {
+        return res.status(400).json({ success:false, message:"Please enter your name to create an account" });
+      }
+      // Same placeholder-email reasoning as verifyOtpLogin — phone
+      // accounts have no real email at signup, but the schema still
+      // requires one. Customer format must stay EXACTLY phone@sloty.com
+      // since the frontend's placeholder-detection regex depends on it.
+      const placeholderEmail = role === "owner" ? `${phone}@owner.sloty.com` : `${phone}@sloty.com`;
+      user = await User.create({
+        name: name.trim(),
+        phone,
+        email: placeholderEmail,
+        password: crypto.randomBytes(20).toString("hex"),
+        role,
+        isVerified: true,
+        referralCode: generateReferralCode(name.trim()),
+      });
+      isNewAccount = true;
+    } else {
+      user.isVerified = true;
+      user.lastLogin = Date.now();
+      await user.save({ validateBeforeSave:false });
+    }
+
+    sendToken(user, isNewAccount ? 201 : 200, res, isNewAccount ? "Welcome to Sloty! 🎉" : `Welcome back, ${user.name}! 👋`);
+  } catch (err) {
+    console.error("FIREBASE LOGIN ERROR:", err.message);
     if (err.name === "ValidationError") return res.status(400).json({ success:false, message: Object.values(err.errors)[0].message });
     if (err.code === 11000) return res.status(400).json({ success:false, message:"This phone number is already registered." });
     res.status(500).json({ success:false, message:"Server error" });
