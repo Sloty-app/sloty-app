@@ -2397,6 +2397,10 @@ export default function CustomerApp() {
         <p style={{ color:"#fff", fontSize:48, fontWeight:900, lineHeight:1, letterSpacing:8 }}>{confirmed.otp}</p>
         <p style={{ color:"rgba(255,255,255,0.5)", fontSize:11, marginTop:8 }}>Show this to the shop owner to start service</p>
       </div>
+      <div style={{ background:"rgba(255,255,255,0.08)", borderRadius:14, padding:"12px 20px", marginBottom:20, display:"flex", gap:8, alignItems:"center", width:"100%", boxSizing:"border-box" }}>
+        <Clock size={14} color="rgba(255,255,255,0.7)" style={{ flexShrink:0 }} />
+        <p style={{ color:"rgba(255,255,255,0.8)", fontSize:12, fontWeight:700 }}>Please arrive at least 15 minutes before your slot time</p>
+      </div>
       {confirmed.walletDeducted > 0 && (
         <div style={{ background:"rgba(255,255,255,0.15)", borderRadius:12, padding:"10px 16px", marginBottom:12, display:"flex", justifyContent:"space-between", alignItems:"center", width:"100%" }}>
           <span style={{ color:"rgba(255,255,255,0.85)", fontSize:13, fontWeight:700 }}>💰 Wallet credit applied</span>
