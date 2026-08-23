@@ -56,21 +56,26 @@ const BookingSchema = new mongoose.Schema({
   paymentMode:   { type: String, enum: ["cash","upi","card"], default: "cash" },
   paymentStatus: { type: String, enum: ["pending","paid"],   default: "pending" },
 
-  razorpayOrderId:   { type: String, default: null },
-  razorpayPaymentId: { type: String, default: null },
+  // Services the owner adds AFTER the original booking — e.g. customer
+  // came in for a haircut, barber recommends a beard trim too. Kept
+  // fully separate from serviceBreakdown/paymentStatus above rather
+  // than merged in, since the original booking may already be paid
+  // (via UPI) and this needs its own independent payment step —
+  // retroactively changing a completed UPI payment isn't practical.
+  addedServices: [{
+    name:     { type: String },
+    price:    { type: Number },
+    duration: { type: Number },
+    addedAt:  { type: Date, default: Date.now },
+  }],
+  addedServicesPaymentStatus: { type: String, enum: ["pending","paid"], default: "pending" },
+
   notes:        { type: String,  default: "" },
   cancelReason: { type: String,  default: "" },
   reminderSent: { type: Boolean, default: false },
   otp:          { type: String,  default: "" },
   otpVerified:  { type: Boolean, default: false },
   walletDeducted: { type: Number, default: 0 }, // persisted for booking history display
-
-  // Set only when a paid UPI booking is cancelled — tracks whether the
-  // customer received a wallet-credit refund (cancelled with enough
-  // notice) or forfeited the payment (cancelled too close to the slot).
-  // Never set for cash bookings, since there's nothing to refund.
-  refundStatus: { type: String, enum: ["none","refunded_to_wallet","forfeited"], default: "none" },
-  refundAmount: { type: Number, default: 0 },
 }, { timestamps: true });
 
 BookingSchema.statics.generateToken = function(count) {

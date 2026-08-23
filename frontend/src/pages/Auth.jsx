@@ -225,6 +225,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
       {step === "otp" && (
         <>
           <p style={{ fontSize:13, color:C.muted, marginBottom:4, textAlign:"center" }}>OTP sent to <strong style={{ color:C.text }}>+91 {phone}</strong></p>
+          <p style={{ fontSize:11, color:C.muted, marginBottom:16, textAlign:"center" }}>Don't see it? Check your spam/blocked messages folder</p>
           <button onClick={() => {setStep("phone"); setOtp(""); setErr("");}} style={{ display:"block", margin:"0 auto 16px", background:"none", border:"none", color:cfg.accent, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
             Change number
           </button>

@@ -22,7 +22,20 @@ exports.getDashboardAnalytics = async (req, res) => {
     const bookings = await Booking.find({
       store: store._id,
       createdAt: { $gte: since },
-    }).select("customer service staffName timeSlot status paymentMode createdAt date");
+    }).select("customer service staffName timeSlot status paymentMode createdAt date addedServices addedServicesPaymentStatus");
+
+    // A booking's real, realized revenue — original price plus any
+    // add-on services, but only counting add-ons that were actually
+    // marked paid. An unpaid add-on hasn't actually come in yet, so it
+    // shouldn't inflate reported revenue ahead of when the store
+    // genuinely collects it.
+    const bookingRevenue = (b) => {
+      const base = b.service?.price || 0;
+      const addOns = b.addedServicesPaymentStatus === "paid"
+        ? (b.addedServices || []).reduce((sum, s) => sum + (s.price || 0), 0)
+        : 0;
+      return base + addOns;
+    };
 
     // ── Revenue trend (completed bookings only — reflects money that
     //    actually came in, not pending/cancelled ones) ──────────────────
@@ -34,7 +47,7 @@ exports.getDashboardAnalytics = async (req, res) => {
     }
     bookings.filter(b => b.status === "completed").forEach(b => {
       const key = new Date(b.createdAt).toISOString().slice(0,10);
-      if (revenueByDay[key] !== undefined) revenueByDay[key] += (b.service?.price || 0);
+      if (revenueByDay[key] !== undefined) revenueByDay[key] += bookingRevenue(b);
     });
     const revenueTrend = Object.entries(revenueByDay).map(([date, revenue]) => ({ date, revenue }));
 
@@ -43,6 +56,14 @@ exports.getDashboardAnalytics = async (req, res) => {
     bookings.filter(b => b.status === "completed").forEach(b => {
       const name = b.service?.name || "Unknown";
       serviceRevenue[name] = (serviceRevenue[name] || 0) + (b.service?.price || 0);
+      // Add-ons counted under their OWN name, not folded into whatever
+      // was originally booked — a beard trim added onto a haircut visit
+      // should show up as beard-trim revenue, not haircut revenue.
+      if (b.addedServicesPaymentStatus === "paid") {
+        (b.addedServices || []).forEach(s => {
+          serviceRevenue[s.name] = (serviceRevenue[s.name] || 0) + (s.price || 0);
+        });
+      }
     });
     const revenueByService = Object.entries(serviceRevenue)
       .map(([name, revenue]) => ({ name, revenue }))
@@ -55,7 +76,7 @@ exports.getDashboardAnalytics = async (req, res) => {
     // customer's full history, not just bookings within `days`.
     const customerIds = [...new Set(bookings.map(b => b.customer?.toString()).filter(Boolean))];
     const firstBookingDates = await Booking.aggregate([
-      { $match: { store: store._id, customer: { $in: customerIds.map(id => new (require("mongoose").Types.ObjectId)(id)) } } },
+      { $match: { store: store._id, customer: { $in: customerIds.map(id => new mongoose.Types.ObjectId(id)) } } },
       { $group: { _id: "$customer", firstBooking: { $min: "$createdAt" } } },
     ]);
     const firstBookingMap = new Map(firstBookingDates.map(f => [f._id.toString(), f.firstBooking]));
@@ -99,7 +120,7 @@ exports.getDashboardAnalytics = async (req, res) => {
       bookings.filter(b => b.status === "completed" && b.staffName).forEach(b => {
         if (!staffStats[b.staffName]) staffStats[b.staffName] = { bookings: 0, revenue: 0 };
         staffStats[b.staffName].bookings += 1;
-        staffStats[b.staffName].revenue += (b.service?.price || 0);
+        staffStats[b.staffName].revenue += bookingRevenue(b);
       });
       staffPerformance = Object.entries(staffStats)
         .map(([name, stats]) => ({ name, ...stats }))

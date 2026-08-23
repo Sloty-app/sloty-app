@@ -2,7 +2,7 @@
 const router = require("express").Router();
 const {getAvailableSlots, createBooking, getMyBookings,
   getStoreBookings, getLiveQueue, updateStatus,
-  cancelBooking, getAdminStats, verifyOtp, rescheduleBooking, updateBookingLocation, getBlockedDates, getCustomerHistory, getStoreActivity, addBlockedDate, removeBlockedDate } = require("../controllers/bookingController");
+  cancelBooking, getAdminStats, verifyOtp, rescheduleBooking, updateBookingLocation, getBlockedDates, getCustomerHistory, getStoreActivity, addBlockedDate, removeBlockedDate, addServiceToBooking, markAddOnPaid } = require("../controllers/bookingController");
 const { protect, authorize } = require("../middleware/auth");
 
 router.get("/slots/:storeId",  protect, getAvailableSlots);
@@ -15,6 +15,8 @@ router.get("/store/:storeId",  protect, authorize("owner","admin"), getStoreBook
 router.get("/queue/:storeId",  protect, getLiveQueue);
 router.put("/:id/status",      protect, authorize("owner","admin"), updateStatus);
 router.put("/:id/verify-otp",  protect, authorize("owner","admin"), verifyOtp);
+router.put("/:id/add-service", protect, authorize("owner","admin"), addServiceToBooking);
+router.put("/:id/mark-addon-paid", protect, authorize("owner","admin"), markAddOnPaid);
 router.put("/:id/cancel",      protect, authorize("customer"), cancelBooking);
 router.put("/:id/reschedule", protect, rescheduleBooking);
 router.put("/:id/location", protect, updateBookingLocation);

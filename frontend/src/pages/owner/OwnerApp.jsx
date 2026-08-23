@@ -714,6 +714,31 @@ export default function OwnerApp() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [gridDate, setGridDate] = useState(() => getISTDateString());
   const [showManageSlots, setShowManageSlots] = useState(false);
+  const [addServiceBooking, setAddServiceBooking] = useState(null); // booking object | null
+  const [addServiceErr, setAddServiceErr] = useState("");
+  const [addServiceLoading, setAddServiceLoading] = useState(false);
+  const [addServiceWarning, setAddServiceWarning] = useState("");
+
+  const addServiceToBooking = async (bookingId, serviceName) => {
+    setAddServiceErr(""); setAddServiceLoading(true);
+    try {
+      const res = await api("PUT", `/bookings/${bookingId}/add-service`, { serviceName });
+      setBookings(bk => bk.map(x => x._id===bookingId ? res.booking : x));
+      if (res.slotWarning) {
+        setAddServiceWarning(res.slotWarning);
+      } else {
+        setAddServiceBooking(null);
+      }
+    } catch (e) { setAddServiceErr(e.message); }
+    finally { setAddServiceLoading(false); }
+  };
+
+  const markAddOnPaid = async (bookingId) => {
+    try {
+      const res = await api("PUT", `/bookings/${bookingId}/mark-addon-paid`);
+      setBookings(bk => bk.map(x => x._id===bookingId ? res.booking : x));
+    } catch (e) { /* silent — button stays visible to retry */ }
+  };
   // Lets the socket refresh callback below always see the CURRENT tab
   // and date without needing to re-run the whole socket setup/teardown
   // (joining/leaving rooms, attaching listeners) every time either one
@@ -952,7 +977,10 @@ export default function OwnerApp() {
   };
 
   const todayBookings = bookings.filter(b => b.date === today);
-  const todayRevenue  = todayBookings.filter(b=>b.status==="completed").reduce((a,b)=>a+(b.service?.price||0),0);
+  // Includes paid add-ons — same reasoning as the History tab and
+  // backend analytics: an add-on the store actually collected is real
+  // revenue, not just the original booked price.
+  const todayRevenue  = todayBookings.filter(b=>b.status==="completed").reduce((a,b)=>a+(b.service?.price||0)+(b.addedServicesPaymentStatus==="paid"?(b.addedServices||[]).reduce((s,x)=>s+(x.price||0),0):0),0);
   const waiting       = todayBookings.filter(b=>b.status==="confirmed").length;
   const inProgress    = todayBookings.filter(b=>b.status==="in_progress").length;
   const completed     = todayBookings.filter(b=>b.status==="completed").length;
@@ -1400,6 +1428,34 @@ export default function OwnerApp() {
                     </button>
                   </div>
                 )}
+
+                {(b.status==="confirmed" || b.status==="in_progress") && (
+                  <button onClick={()=>{setAddServiceBooking(b); setAddServiceErr(""); setAddServiceWarning("");}} style={{ width:"100%", padding:"9px", marginTop:8, background:C.acc+"15", color:"#B8860B", border:`1.5px dashed ${C.acc}`, borderRadius:10, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                    <Plus size={13} /> Add Service
+                  </button>
+                )}
+
+                {b.addedServices?.length > 0 && (
+                  <div style={{ marginTop:10, background:C.inputBg, borderRadius:10, padding:"10px 12px" }}>
+                    <p style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:6 }}>ADDED DURING VISIT</p>
+                    {b.addedServices.map((s,i) => (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:C.text, marginBottom:2 }}>
+                        <span>{s.name}</span>
+                        <span style={{ fontWeight:800 }}>₹{s.price}</span>
+                      </div>
+                    ))}
+                    {b.addedServicesPaymentStatus === "paid" ? (
+                      <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:6 }}>
+                        <CheckCircle size={11} color={C.green} />
+                        <span style={{ fontSize:11, color:C.green, fontWeight:800 }}>Add-on paid</span>
+                      </div>
+                    ) : (
+                      <button onClick={()=>markAddOnPaid(b._id)} style={{ width:"100%", padding:"7px", marginTop:6, background:C.green+"15", color:C.green, border:"none", borderRadius:8, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif", fontSize:11 }}>
+                        Mark Add-on as Paid
+                      </button>
+                    )}
+                  </div>
+                )}
               </Card>
             ))}
           </div>
@@ -1472,11 +1528,16 @@ export default function OwnerApp() {
                     <div style={{ display:"flex", alignItems:"center", gap:4 }}><Wrench size={11} color={C.muted} /><span style={{ fontSize:12, color:C.muted }}>{b.service?.name}</span></div>
                     <div style={{ display:"flex", alignItems:"center", gap:4 }}><Clock size={11} color={C.muted} /><span style={{ fontSize:12, color:C.muted }}>{b.timeSlot}</span></div>
                   </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                    {b.paymentMode === "upi" && b.paymentStatus === "paid" && (
-                      <span style={{ fontSize:10, color:C.green, fontWeight:800 }}>UPI ✓</span>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      {b.paymentMode === "upi" && b.paymentStatus === "paid" && (
+                        <span style={{ fontSize:10, color:C.green, fontWeight:800 }}>UPI ✓</span>
+                      )}
+                      <div style={{ display:"flex", alignItems:"center", gap:1 }}><IndianRupee size={12} color={C.pri} strokeWidth={2.5} /><span style={{ fontSize:13, fontWeight:900, color:C.pri }}>{b.service?.price}</span></div>
+                    </div>
+                    {b.addedServices?.length > 0 && (
+                      <p style={{ fontSize:9, color:"#B8860B", fontWeight:700 }}>+₹{b.addedServices.reduce((s,x)=>s+(x.price||0),0)} add-on</p>
                     )}
-                    <div style={{ display:"flex", alignItems:"center", gap:1 }}><IndianRupee size={12} color={C.pri} strokeWidth={2.5} /><span style={{ fontSize:13, fontWeight:900, color:C.pri }}>{b.service?.price}</span></div>
                   </div>
                 </div>
               </Card>
@@ -1598,9 +1659,13 @@ export default function OwnerApp() {
         {tab==="history" && (
           <div>
             {histLoading ? <Loader text="Loading history..." /> : (() => {
+              // Same reasoning as the backend analytics fix — a paid
+              // add-on is real revenue the store actually collected,
+              // and should count here too, not just the original price.
+              const bookingTotal = (b) => (b.service?.price || 0) + (b.addedServicesPaymentStatus === "paid" ? (b.addedServices || []).reduce((s,x)=>s+(x.price||0),0) : 0);
               const completed30  = history.filter(b=>b.status==="completed");
               const cancelled30  = history.filter(b=>b.status==="cancelled");
-              const revenue30    = completed30.reduce((s,b)=>s+(b.service?.price||0),0);
+              const revenue30    = completed30.reduce((s,b)=>s+bookingTotal(b),0);
               const byDate = history.reduce((acc,b) => {
                 if (!acc[b.date]) acc[b.date] = [];
                 acc[b.date].push(b);
@@ -1621,7 +1686,7 @@ export default function OwnerApp() {
                       <p style={{ color:C.muted, fontWeight:700 }}>No bookings in last 30 days</p>
                     </div>
                   ) : Object.entries(byDate).map(([date, dayBookings]) => {
-                    const dayRevenue = dayBookings.filter(b=>b.status==="completed").reduce((s,b)=>s+(b.service?.price||0),0);
+                    const dayRevenue = dayBookings.filter(b=>b.status==="completed").reduce((s,b)=>s+bookingTotal(b),0);
                     return (
                       <Card key={date} style={{ marginBottom:10 }}>
                         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
@@ -1650,6 +1715,9 @@ export default function OwnerApp() {
                             </div>
                             <div style={{ textAlign:"right" }}>
                               <div style={{ display:"flex", alignItems:"center", gap:1, justifyContent:"flex-end" }}><IndianRupee size={11} color={C.pri} strokeWidth={2.5} /><span style={{ fontSize:12, fontWeight:900, color:C.pri }}>{b.service?.price}</span></div>
+                              {b.addedServices?.length > 0 && (
+                                <p style={{ fontSize:9, color:"#B8860B", fontWeight:700, marginTop:1 }}>+₹{b.addedServices.reduce((s,x)=>s+(x.price||0),0)} add-on</p>
+                              )}
                               <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"flex-end" }}>
                                 {b.paymentMode === "upi" && b.paymentStatus === "paid" && <span style={{ fontSize:9, color:C.green, fontWeight:800 }}>UPI</span>}
                                 <span style={{ fontSize:10, color:b.status==="completed"?C.green:b.status==="cancelled"?C.red:C.muted, fontWeight:700 }}>{b.status}</span>
@@ -1763,6 +1831,9 @@ export default function OwnerApp() {
                   <div>
                     <p style={{ fontSize:13, fontWeight:800, color:C.text }}>{b.service?.name}</p>
                     <p style={{ fontSize:11, color:C.muted, marginTop:2 }}>{new Date(b.date).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})} · {b.timeSlot}</p>
+                    {b.addedServices?.length > 0 && (
+                      <p style={{ fontSize:10, color:"#B8860B", fontWeight:700, marginTop:2 }}>+ {b.addedServices.map(s=>s.name).join(", ")}</p>
+                    )}
                     {b.status==="cancelled" && b.cancelReason && (
                       <p style={{ fontSize:10, color:C.red, fontStyle:"italic", marginTop:2 }}>Cancelled: "{b.cancelReason}"</p>
                     )}
@@ -1819,6 +1890,35 @@ export default function OwnerApp() {
       <BottomSheet open={showManageSlots} onClose={() => { setShowManageSlots(false); fetchGridSlots(gridDate); }} title="Manage Slots">
         <OwnerBlockedDates />
         <OwnerBreakTimes />
+      </BottomSheet>
+
+      <BottomSheet open={!!addServiceBooking} onClose={() => setAddServiceBooking(null)} title={addServiceBooking ? `Add Service — ${addServiceBooking.customerName}` : "Add Service"}>
+        {addServiceWarning && (
+          <div style={{ background:C.acc+"18", border:`1.5px solid ${C.acc}`, borderRadius:12, padding:"12px 14px", marginBottom:14, display:"flex", gap:8, alignItems:"flex-start" }}>
+            <AlertCircle size={15} color="#92610A" style={{ flexShrink:0, marginTop:1 }} />
+            <div>
+              <p style={{ fontSize:12, color:"#92610A", fontWeight:700, marginBottom:8 }}>{addServiceWarning}</p>
+              <button onClick={()=>{setAddServiceBooking(null); setAddServiceWarning("");}} style={{ padding:"7px 16px", background:"#92610A", color:"#fff", border:"none", borderRadius:8, fontWeight:800, fontSize:12, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
+                Got it, added anyway
+              </button>
+            </div>
+          </div>
+        )}
+        {addServiceErr && <p style={{ color:C.red, fontSize:12, fontWeight:700, marginBottom:10 }}>{addServiceErr}</p>}
+        {!addServiceWarning && myStore?.services?.map(s => (
+          <button
+            key={s.name}
+            disabled={addServiceLoading}
+            onClick={() => addServiceToBooking(addServiceBooking._id, s.name)}
+            style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"13px 14px", background:"#fff", border:"1.5px solid #E8ECF5", borderRadius:12, marginBottom:8, cursor:addServiceLoading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", opacity:addServiceLoading?0.6:1 }}
+          >
+            <div style={{ textAlign:"left" }}>
+              <p style={{ fontSize:13, fontWeight:800, color:C.text }}>{s.name}</p>
+              <p style={{ fontSize:11, color:C.muted }}>{s.duration} min</p>
+            </div>
+            <span style={{ fontSize:14, fontWeight:900, color:C.pri }}>{s.isFree ? "FREE" : s.isPriceVariable ? "On Inspection" : `₹${s.price}`}</span>
+          </button>
+        ))}
       </BottomSheet>
     </div>
   );

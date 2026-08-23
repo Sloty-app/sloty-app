@@ -2465,6 +2465,27 @@ export default function CustomerApp() {
                 </div>
               </div>
             </div>
+            {b.addedServices?.length > 0 && (
+              <div style={{ marginTop:10, paddingTop:10, borderTop:"1px solid #F0F2F8" }}>
+                <p style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:6 }}>ADDED DURING YOUR VISIT</p>
+                {b.addedServices.map((s,i) => (
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:C.text, marginBottom:2 }}>
+                    <span>{s.name}</span>
+                    <span style={{ fontWeight:800 }}>₹{s.price}</span>
+                  </div>
+                ))}
+                <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:6 }}>
+                  {b.addedServicesPaymentStatus === "paid" ? (
+                    <>
+                      <CheckCircle size={11} color={C.green} />
+                      <span style={{ fontSize:11, color:C.green, fontWeight:800 }}>Paid at store</span>
+                    </>
+                  ) : (
+                    <span style={{ fontSize:11, color:C.acc, fontWeight:800 }}>To be paid at store</span>
+                  )}
+                </div>
+              </div>
+            )}
             {b.status==="confirmed" && (
               <div style={{ display:"flex", gap:6, marginTop:10 }}>
                 <a href={getDirectionsUrl(b.store)} target="_blank" rel="noreferrer" style={{ flex:1, textDecoration:"none" }}>

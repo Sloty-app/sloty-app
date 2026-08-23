@@ -269,13 +269,19 @@ exports.getStoreAnalytics = async (req, res) => {
     const noShow      = bookings.filter(b => b.status === "no_show");
     const confirmed   = bookings.filter(b => b.status === "confirmed");
 
-    const totalRevenue = completed.reduce((sum, b) => sum + (b.service?.price || 0), 0);
+    // A booking's real, realized revenue — original price plus any
+    // add-on services, but only counting add-ons actually marked paid
+    // (an unpaid add-on hasn't been collected yet, so shouldn't inflate
+    // reported revenue ahead of when the store genuinely receives it).
+    const bookingTotal = (b) => (b.service?.price || 0) + (b.addedServicesPaymentStatus === "paid" ? (b.addedServices || []).reduce((s,x)=>s+(x.price||0),0) : 0);
+
+    const totalRevenue = completed.reduce((sum, b) => sum + bookingTotal(b), 0);
 
     // Last 30 days revenue, for a "recent performance" signal separate
     // from all-time totals.
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const recentCompleted = completed.filter(b => new Date(b.createdAt) >= thirtyDaysAgo);
-    const recentRevenue = recentCompleted.reduce((sum, b) => sum + (b.service?.price || 0), 0);
+    const recentRevenue = recentCompleted.reduce((sum, b) => sum + bookingTotal(b), 0);
 
     const recentBookings = [...bookings]
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))

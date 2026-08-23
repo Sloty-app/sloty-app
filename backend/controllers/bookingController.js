@@ -14,6 +14,18 @@ const { emitToRoom } = require("../config/socket");
 const { haversineKm, estimateTravelMinutes } = require("../utils/geo");
 
 // Helper: generate time slots between open & close
+// Converts "9:00 AM" / "2:30 PM" style strings to minutes-since-midnight.
+// Needed for real time-range math (e.g. does adding a service push this
+// booking's actual end time past when the next booking starts) rather
+// than comparing time strings alphabetically, which sorts incorrectly.
+const timeToMinutes = (t) => {
+  const [time, period] = t.split(" ");
+  let [h, m] = time.split(":").map(Number);
+  if (period === "PM" && h !== 12) h += 12;
+  if (period === "AM" && h === 12) h = 0;
+  return h * 60 + m;
+};
+
 const generateSlots = (open, close, duration) => {
   const slots = [];
   let [h, m] = open.split(":").map(Number);
@@ -542,6 +554,98 @@ exports.updateStatus = async (req, res) => {
     }
 
     res.status(200).json({ success:true, message:`Booking marked as ${status}`, booking });
+  } catch (err) {
+    res.status(500).json({ success:false, message:"Server error" });
+  }
+};
+
+// PUT /api/bookings/:id/add-service
+// Owner adds an extra service mid-visit — e.g. customer came in for a
+// haircut, barber recommends a beard trim too. Deliberately kept
+// separate from the original serviceBreakdown/paymentStatus, since the
+// original booking may already be paid (via UPI) and retroactively
+// modifying a completed payment isn't practical — this is billed and
+// collected as its own, independent add-on instead.
+exports.addServiceToBooking = async (req, res) => {
+  try {
+    const { serviceName } = req.body;
+    if (!serviceName) return res.status(400).json({ success:false, message:"Please specify which service to add" });
+
+    const booking = await Booking.findById(req.params.id).populate("store", "name owner services");
+    if (!booking) return res.status(404).json({ success:false, message:"Booking not found" });
+    if (booking.store?.owner?.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ success:false, message:"Not authorized" });
+    }
+    if (booking.status === "completed" || booking.status === "cancelled" || booking.status === "no_show") {
+      return res.status(400).json({ success:false, message:"Can't add a service to a booking that's already finished or cancelled" });
+    }
+
+    const matched = booking.store.services.find(s => s.name === serviceName);
+    if (!matched) return res.status(400).json({ success:false, message:"This service is no longer offered by the store" });
+
+    booking.addedServices.push({
+      name: matched.name,
+      price: matched.isFree ? 0 : (matched.isPriceVariable ? 0 : matched.price),
+      duration: matched.duration,
+    });
+    await booking.save();
+
+    // Customer wasn't told anything about this before now — a real gap,
+    // since an add-on directly changes what they owe. Fire-and-forget,
+    // same pattern as every other status-change notification here.
+    sendNotification(booking.customer, "Service Added ➕", `${matched.name} was added to your visit at ${booking.store.name} — ₹${matched.isFree ? 0 : matched.price}, payable at the store.`).catch(()=>{});
+
+    // Slot-conflict check — informational only, does not block the
+    // add. Real salons handle running a few minutes over informally
+    // all the time; the goal here is just to give the owner a heads
+    // up, not to prevent them from actually serving the customer in
+    // front of them.
+    let slotWarning = null;
+    const originalDuration = booking.serviceBreakdown.reduce((sum, s) => sum + (s.duration || 0), 0);
+    const addedDuration = booking.addedServices.reduce((sum, s) => sum + (s.duration || 0), 0);
+    const newEndMinutes = timeToMinutes(booking.timeSlot) + originalDuration + addedDuration;
+
+    const nextBookingQuery = {
+      store: booking.store._id,
+      date: booking.date,
+      status: { $in: ["confirmed", "in_progress"] },
+      _id: { $ne: booking._id },
+    };
+    if (booking.staffId) nextBookingQuery.staffId = booking.staffId;
+    const sameDayBookings = await Booking.find(nextBookingQuery).select("timeSlot").lean();
+    const nextBooking = sameDayBookings
+      .filter(b => timeToMinutes(b.timeSlot) > timeToMinutes(booking.timeSlot))
+      .sort((a, b) => timeToMinutes(a.timeSlot) - timeToMinutes(b.timeSlot))[0];
+
+    if (nextBooking && timeToMinutes(nextBooking.timeSlot) < newEndMinutes) {
+      slotWarning = `Heads up — with this added service, you may run into the next booking at ${nextBooking.timeSlot}.`;
+    }
+
+    emitToRoom(`store:${booking.store._id}:${booking.date}`, "queue:update", { reason:"service_added", bookingId: booking._id });
+
+    res.status(200).json({ success:true, message:"Service added", booking, slotWarning });
+  } catch (err) {
+    res.status(500).json({ success:false, message:"Server error" });
+  }
+};
+
+// PUT /api/bookings/:id/mark-addon-paid
+// Marks the added-services portion as paid — entirely separate from
+// the original booking's own paymentStatus, since this is always
+// collected at the store (cash/UPI-at-counter), never prepaid online.
+exports.markAddOnPaid = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id).populate("store", "owner");
+    if (!booking) return res.status(404).json({ success:false, message:"Booking not found" });
+    if (booking.store?.owner?.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ success:false, message:"Not authorized" });
+    }
+    if (!booking.addedServices.length) {
+      return res.status(400).json({ success:false, message:"No added services on this booking" });
+    }
+    booking.addedServicesPaymentStatus = "paid";
+    await booking.save();
+    res.status(200).json({ success:true, message:"Add-on marked as paid", booking });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }
