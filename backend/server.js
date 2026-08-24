@@ -17,9 +17,32 @@ const { runRevisitCheck } = require("./config/revisitJob");
 const { runNoShowCheck }  = require("./config/noShowJob");
 const { runAbandonedPaymentCleanup } = require("./config/abandonedPaymentJob");
 
-mongoose.connect(process.env.MONGO_URI)
+// Tuned specifically for Render's free tier + MongoDB Atlas M0 combo:
+// serverSelectionTimeoutMS is raised well above the driver default's
+// failure window so a cold-started process has real time to finish
+// establishing the connection, rather than failing fast the way a
+// true serverless function would want to. maxPoolSize is kept modest
+// since Atlas M0 caps concurrent connections at 500 total — no need
+// to claim more than this app actually uses. family:4 avoids slow or
+// failed connection attempts some networks hit on IPv6 SRV lookups.
+mongoose.connect(process.env.MONGO_URI, {
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 45000,
+  connectTimeoutMS: 30000,
+  maxPoolSize: 10,
+  minPoolSize: 1,
+  family: 4,
+})
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => { console.error("❌ MongoDB Failed:", err.message); process.exit(1); });
+
+// Lifecycle logging — without this, a dropped connection (Atlas M0 is
+// known to silently close idle sockets after a few hours) shows up to
+// users only as a vague, unexplained failure, with nothing in the
+// logs pointing at the database as the actual cause.
+mongoose.connection.on("disconnected", () => console.warn("⚠️  MongoDB disconnected"));
+mongoose.connection.on("reconnected",  () => console.log("✅ MongoDB reconnected"));
+mongoose.connection.on("error",        (e) => console.error("❌ MongoDB connection error:", e.message));
 
 const app = express();
 
@@ -172,12 +195,34 @@ setInterval(() => {
 }, 10 * 60 * 1000);
 
 const PORT = process.env.PORT || 5001;
-server.listen(PORT, () => {
-  console.log("═══════════════════════════════════════");
-  console.log("  📍 Sloty Backend Server");
-  console.log("═══════════════════════════════════════");
-  console.log(`  🚀 Running on port ${PORT}`);
-  console.log(`  📡 API: http://localhost:${PORT}`);
-  console.log(`  🔌 Socket.io attached`);
-  console.log("═══════════════════════════════════════");
-});
+
+// The actual fix for the intermittent "database" error some new
+// customers hit — previously the server started accepting requests
+// immediately, with no guarantee MongoDB had finished connecting yet.
+// On a Render free-tier cold start, that gap was real: a login request
+// could land, and its User.findOne()/create() would either buffer and
+// time out, or fail server selection outright, surfacing as a vague,
+// hard-to-explain error. Now the server genuinely waits for a
+// confirmed connection before opening the door to any request at all.
+const startServer = () => {
+  server.listen(PORT, () => {
+    console.log("═══════════════════════════════════════");
+    console.log("  📍 Sloty Backend Server");
+    console.log("═══════════════════════════════════════");
+    console.log(`  🚀 Running on port ${PORT}`);
+    console.log(`  📡 API: http://localhost:${PORT}`);
+    console.log(`  🔌 Socket.io attached`);
+    console.log("═══════════════════════════════════════");
+  });
+};
+
+// readyState 1 means already connected — covers the normal case where
+// the connection finishes well before the file reaches this point.
+// Otherwise, wait for Mongoose's own "connected" event rather than
+// guessing at a delay, so this works correctly whether the connection
+// takes 200ms or 20 seconds on a cold start.
+if (mongoose.connection.readyState === 1) {
+  startServer();
+} else {
+  mongoose.connection.once("connected", startServer);
+}

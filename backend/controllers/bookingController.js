@@ -583,6 +583,15 @@ exports.addServiceToBooking = async (req, res) => {
     const matched = booking.store.services.find(s => s.name === serviceName);
     if (!matched) return res.status(400).json({ success:false, message:"This service is no longer offered by the store" });
 
+    // Guards against an accidental double-tap creating two identical
+    // entries — a genuine repeat add of the same service later in the
+    // visit is still allowed, this only catches ones within a few
+    // seconds of each other, which is what a double-tap looks like.
+    const justAdded = booking.addedServices.find(s => s.name === matched.name && (Date.now() - new Date(s.addedAt).getTime()) < 5000);
+    if (justAdded) {
+      return res.status(200).json({ success:true, message:"Service added", booking, slotWarning:null });
+    }
+
     booking.addedServices.push({
       name: matched.name,
       price: matched.isFree ? 0 : (matched.isPriceVariable ? 0 : matched.price),
@@ -612,13 +621,27 @@ exports.addServiceToBooking = async (req, res) => {
       _id: { $ne: booking._id },
     };
     if (booking.staffId) nextBookingQuery.staffId = booking.staffId;
-    const sameDayBookings = await Booking.find(nextBookingQuery).select("timeSlot").lean();
+    const sameDayBookings = await Booking.find(nextBookingQuery).select("timeSlot customer").lean();
     const nextBooking = sameDayBookings
       .filter(b => timeToMinutes(b.timeSlot) > timeToMinutes(booking.timeSlot))
       .sort((a, b) => timeToMinutes(a.timeSlot) - timeToMinutes(b.timeSlot))[0];
 
     if (nextBooking && timeToMinutes(nextBooking.timeSlot) < newEndMinutes) {
-      slotWarning = `Heads up — with this added service, you may run into the next booking at ${nextBooking.timeSlot}.`;
+      slotWarning = `Heads up — with this added service, you may run into the next booking at ${nextBooking.timeSlot}. We've already sent them a heads-up about a possible short delay.`;
+
+      // Proactively let the affected customer know, rather than leaving
+      // them to find out only by showing up and waiting. They keep
+      // their original slot either way — this is advance notice, not
+      // a reschedule — but a heads-up beats a surprise wait with no
+      // explanation.
+      const estimatedDelay = newEndMinutes - timeToMinutes(nextBooking.timeSlot);
+      if (nextBooking.customer) {
+        sendNotification(
+          nextBooking.customer,
+          "Possible delay ⏱️",
+          `The customer ahead of you at ${booking.store.name} added an extra service — your ${nextBooking.timeSlot} appointment may run about ${estimatedDelay} min behind. No action needed, just a heads up.`
+        ).catch(()=>{});
+      }
     }
 
     emitToRoom(`store:${booking.store._id}:${booking.date}`, "queue:update", { reason:"service_added", bookingId: booking._id });
@@ -745,11 +768,27 @@ exports.updateBookingLocation = async (req, res) => {
 
 exports.cancelBooking = async (req, res) => {
   try {
-    const booking = await Booking.findOne({ _id: req.params.id, customer: req.user.id }).populate("store", "name");
+    const booking = await Booking.findOne({ _id: req.params.id, customer: req.user.id }).populate("store", "name owner");
     if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-    if (["completed","cancelled"].includes(booking.status)) return res.status(400).json({ success:false, message:`Cannot cancel a ${booking.status} booking` });
+    // Matches what the frontend already only ever offers (the Cancel
+    // button only appears for "confirmed" bookings) — enforced here too
+    // rather than relying solely on the UI hiding the option, since the
+    // API itself should never allow cancelling a visit that's already
+    // underway, regardless of how the request was made.
+    if (["completed","cancelled","in_progress"].includes(booking.status)) {
+      return res.status(400).json({ success:false, message: booking.status === "in_progress" ? "Can't cancel — your service has already started." : `Cannot cancel a ${booking.status} booking` });
+    }
     booking.status = "cancelled";
     booking.cancelReason = req.body.reason||"Cancelled by customer";
+
+    // A service the owner already added (possible before the customer
+    // even arrives, since add-ons can be added anytime pre-completion)
+    // is now moot — nothing to refund, since add-ons are never prepaid,
+    // but the owner should know they no longer need to prepare for it.
+    if (booking.addedServices?.length > 0 && booking.store?.owner) {
+      const addedNames = booking.addedServices.map(s => s.name).join(", ");
+      sendNotification(booking.store.owner, "Booking Cancelled — had an add-on", `A booking with an added service (${addedNames}) was just cancelled by the customer.`).catch(()=>{});
+    }
 
     // Refund policy — only applies to bookings actually paid via UPI.
     // Cash bookings and unpaid/abandoned UPI bookings have nothing to

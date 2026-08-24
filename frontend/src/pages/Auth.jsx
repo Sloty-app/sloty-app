@@ -97,6 +97,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
   const [err,       setErr]       = useState("");
   const [loading,   setLoading]   = useState(false);
   const [cooldown,  setCooldown]  = useState(0);
+  const [backendRetryNeeded, setBackendRetryNeeded] = useState(false);
 
   const confirmationRef = useRef(null);
   const recaptchaRef = useRef(null);
@@ -164,7 +165,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
   };
 
   const verifyOtp = async () => {
-    setErr("");
+    setErr(""); setBackendRetryNeeded(false);
     if (otp.length !== 6) return setErr("Enter the 6-digit OTP");
     if (!confirmationRef.current) return setErr("Session expired — please request a new OTP");
     setLoading(true);
@@ -179,8 +180,31 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
         setErr("Incorrect OTP. Please try again.");
       } else if (e.code === "auth/code-expired") {
         setErr("OTP expired. Please request a new one.");
+      } else if (idTokenRef.current) {
+        // Firebase already succeeded here — idTokenRef is only set
+        // after confirm() succeeds — so this failure is from the
+        // backend call itself (network blip, transient server error),
+        // not the OTP. No need to make them re-verify from scratch;
+        // the same token is still valid to retry with directly.
+        setErr("Verified, but couldn't reach our server just now.");
+        setBackendRetryNeeded(true);
       } else {
         setErr(e.message || "Verification failed. Please try again.");
+      }
+    }
+    finally { setLoading(false); }
+  };
+
+  const retryBackendLogin = async () => {
+    setErr(""); setLoading(true);
+    try {
+      await loginToBackend();
+    } catch (e) {
+      if (e.message && /enter your name/i.test(e.message)) {
+        setStep("name");
+        setBackendRetryNeeded(false);
+      } else {
+        setErr(e.message || "Still couldn't reach our server. Please try again.");
       }
     }
     finally { setLoading(false); }
@@ -226,7 +250,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
         <>
           <p style={{ fontSize:13, color:C.muted, marginBottom:4, textAlign:"center" }}>OTP sent to <strong style={{ color:C.text }}>+91 {phone}</strong></p>
           <p style={{ fontSize:11, color:C.muted, marginBottom:16, textAlign:"center" }}>Don't see it? Check your spam/blocked messages folder</p>
-          <button onClick={() => {setStep("phone"); setOtp(""); setErr("");}} style={{ display:"block", margin:"0 auto 16px", background:"none", border:"none", color:cfg.accent, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
+          <button onClick={() => {setStep("phone"); setOtp(""); setErr(""); setBackendRetryNeeded(false);}} style={{ display:"block", margin:"0 auto 16px", background:"none", border:"none", color:cfg.accent, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
             Change number
           </button>
 
@@ -259,13 +283,15 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
             </div>
           )}
 
-          <button onClick={verifyOtp} disabled={loading} style={{ width:"100%", padding:"15px", background:loading?"#E0E4EF":cfg.gradient, color:loading?"#AAB":"#fff", border:"none", borderRadius:14, fontSize:15, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:12, boxShadow:loading?"none":"0 6px 24px rgba(0,0,0,0.2)" }}>
-            {loading ? "Verifying..." : <><LogIn size={17} /> Verify & Continue</>}
+          <button onClick={backendRetryNeeded ? retryBackendLogin : verifyOtp} disabled={loading} style={{ width:"100%", padding:"15px", background:loading?"#E0E4EF":cfg.gradient, color:loading?"#AAB":"#fff", border:"none", borderRadius:14, fontSize:15, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:12, boxShadow:loading?"none":"0 6px 24px rgba(0,0,0,0.2)" }}>
+            {loading ? (backendRetryNeeded ? "Retrying..." : "Verifying...") : backendRetryNeeded ? <><RotateCcw size={17} /> Retry</> : <><LogIn size={17} /> Verify & Continue</>}
           </button>
 
-          <button onClick={sendOtp} disabled={cooldown > 0 || loading} style={{ width:"100%", padding:"10px", background:"none", border:"none", color:cooldown>0?C.muted:cfg.accent, fontSize:12, fontWeight:800, cursor:cooldown>0?"default":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-            <RotateCcw size={12} /> {cooldown > 0 ? `Resend OTP in ${cooldown}s` : "Resend OTP"}
-          </button>
+          {!backendRetryNeeded && (
+            <button onClick={sendOtp} disabled={cooldown > 0 || loading} style={{ width:"100%", padding:"10px", background:"none", border:"none", color:cooldown>0?C.muted:cfg.accent, fontSize:12, fontWeight:800, cursor:cooldown>0?"default":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+              <RotateCcw size={12} /> {cooldown > 0 ? `Resend OTP in ${cooldown}s` : "Resend OTP"}
+            </button>
+          )}
         </>
       )}
 

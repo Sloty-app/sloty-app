@@ -315,16 +315,32 @@ exports.verifyFirebaseLogin = async (req, res) => {
       // requires one. Customer format must stay EXACTLY phone@sloty.com
       // since the frontend's placeholder-detection regex depends on it.
       const placeholderEmail = role === "owner" ? `${phone}@owner.sloty.com` : `${phone}@sloty.com`;
-      user = await User.create({
-        name: name.trim(),
-        phone,
-        email: placeholderEmail,
-        password: crypto.randomBytes(20).toString("hex"),
-        role,
-        isVerified: true,
-        referralCode: generateReferralCode(name.trim()),
-      });
-      isNewAccount = true;
+      try {
+        user = await User.create({
+          name: name.trim(),
+          phone,
+          email: placeholderEmail,
+          password: crypto.randomBytes(20).toString("hex"),
+          role,
+          isVerified: true,
+          referralCode: generateReferralCode(name.trim()),
+        });
+        isNewAccount = true;
+      } catch (createErr) {
+        // Two near-simultaneous first-time logins for the same phone
+        // can both pass the findOne() above before either finishes
+        // creating — a genuine, if rare, race. When this happens the
+        // account now legitimately exists (the other request just won
+        // it by microseconds), so re-fetch and let this login succeed
+        // normally rather than surfacing a "already registered" error
+        // to someone who's just trying to log in for the first time.
+        if (createErr.code === 11000) {
+          user = await User.findOne({ phone, role });
+          if (!user) throw createErr; // genuinely something else — let outer handler deal with it
+        } else {
+          throw createErr;
+        }
+      }
     } else {
       user.isVerified = true;
       user.lastLogin = Date.now();
