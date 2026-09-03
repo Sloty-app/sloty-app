@@ -1015,6 +1015,38 @@ export default function CustomerApp() {
       .catch(() => setStoreOffers([]));
   }, [selStore?._id]);
 
+  // Auto-apply the best eligible offer whenever the selected service(s)
+  // change — mirrors computeOfferDiscount's eligibility/discount math
+  // (min booking value, service restriction, per-offer cap) so "best"
+  // here means the same thing the backend will actually charge. Only
+  // reruns when selServices changes, so a customer who taps a
+  // *different* eligible offer, or taps the same one off, keeps that
+  // choice until they change their service selection again — this
+  // picks a sensible default without fighting a manual override.
+  useEffect(() => {
+    if (selServices.length === 0 || storeOffers.length === 0) { setSelectedOffer(null); return; }
+    const subtotal = selServices.reduce((sum, s) => sum + s.price, 0);
+    let best = null, bestDiscount = 0;
+    for (const o of storeOffers) {
+      if (subtotal < (o.minBookingValue || 0)) continue;
+      const isRestricted = o.applicableServices?.length > 0;
+      const matching = isRestricted ? selServices.filter(s => o.applicableServices.includes(s.name)) : selServices;
+      if (matching.length === 0) continue;
+      const eligibleSubtotal = matching.reduce((sum, s) => sum + s.price, 0);
+      let discount = o.discountType === "free" ? eligibleSubtotal
+        : o.discountType === "flat" ? o.discountValue
+        : Math.round(eligibleSubtotal * (o.discountValue / 100));
+      if (o.discountType === "percentage" && o.maxDiscountAmount) discount = Math.min(discount, o.maxDiscountAmount);
+      discount = Math.min(discount, eligibleSubtotal);
+      if (discount > bestDiscount) { bestDiscount = discount; best = o; }
+    }
+    setSelectedOffer(best ? best._id : null);
+    // storeOffers is included so this also runs once offers finish
+    // loading if the customer already picked services before that
+    // fetch resolved — not just on service changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selServices, storeOffers]);
+
   // Real-time: join this customer's personal room so "your turn", booking
   // status changes, and location-aware reminders arrive instantly instead
   // of waiting for the next poll. Plays Sloty's own chime while the app
