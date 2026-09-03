@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import { MapPin, Clock, IndianRupee, Circle, Star, Heart, Share2, Tag } from "lucide-react";
 import { C } from "../constants";
 import { getStoreCover, formatRating, getOpenLabel } from "../utils/storeMedia";
@@ -31,7 +31,7 @@ const pulseStyle = `
 }
 `;
 
-export default function StoreCard({ store, onSelect, onBook, isFavorite, onToggleFavorite, onShare, distanceLabel, offer }) {
+function StoreCard({ store, onSelect, onBook, isFavorite, onToggleFavorite, onShare, distanceLabel, offer }) {
   const cat = getCat(store.category);
   const cover = getStoreCover(store);
   const [imgFailed, setImgFailed] = useState(false);
@@ -219,3 +219,8 @@ export default function StoreCard({ store, onSelect, onBook, isFavorite, onToggl
     </div>
   );
 }
+
+// Store lists can be long, and re-render often (favoriting, search
+// filtering, distance updates) — memoizing means a card only re-renders
+// when its own props actually change, not every time a sibling does.
+export default memo(StoreCard);

@@ -490,7 +490,10 @@ export default function Auth() {
           </>
         )}
 
-        {!usesOtpFlow && (
+        {/* Dev-only convenience — a real user should never see credential
+            autofill on their login screen; it reads as an unfinished
+            build. Still available while running `vite dev` locally. */}
+        {!usesOtpFlow && import.meta.env.DEV && (
           <div style={{ background:C.sec, borderRadius:18, padding:"14px 16px", border:"1px solid rgba(255,255,255,0.06)" }}>
             <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:12 }}>
               <Zap size={13} color={cfg.accent} />

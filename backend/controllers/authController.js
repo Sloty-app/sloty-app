@@ -58,7 +58,7 @@ exports.getMe = async (req, res) => {
     res.status(200).json({ success:true, user });
   } catch (err) {
     console.error("GET ME ERROR:", err);
-    res.status(500).json({ success:false, message:"Server error", detail: err.message });
+    res.status(500).json({ success:false, message:"Server error", detail: process.env.NODE_ENV==="development"?err.message:undefined });
   }
 };
 
@@ -94,7 +94,7 @@ exports.updateProfile = async (req, res) => {
       return res.status(400).json({ success:false, message: firstError?.message || "Invalid data provided." });
     }
     console.error("UPDATE PROFILE ERROR:", err);
-    res.status(500).json({ success:false, message:"Server error", detail: err.message });
+    res.status(500).json({ success:false, message:"Server error", detail: process.env.NODE_ENV==="development"?err.message:undefined });
   }
 };
 
@@ -123,7 +123,7 @@ exports.toggleFavorite = async (req, res) => {
     });
   } catch (err) {
     console.error("TOGGLE FAVORITE ERROR:", err);
-    res.status(500).json({ success:false, message:"Server error", detail: err.message });
+    res.status(500).json({ success:false, message:"Server error", detail: process.env.NODE_ENV==="development"?err.message:undefined });
   }
 };
 
@@ -137,7 +137,7 @@ exports.getFavorites = async (req, res) => {
     res.status(200).json({ success:true, stores: user.favorites || [] });
   } catch (err) {
     console.error("GET FAVORITES ERROR:", err);
-    res.status(500).json({ success:false, message:"Server error", detail: err.message });
+    res.status(500).json({ success:false, message:"Server error", detail: process.env.NODE_ENV==="development"?err.message:undefined });
   }
 };
 
@@ -176,7 +176,7 @@ exports.sendOtp = async (req, res) => {
       return res.status(429).json({ success:false, message:`Please wait ${waitSec}s before requesting another OTP` });
     }
 
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const otp = crypto.randomInt(1000, 10000).toString(); // CSPRNG, not Math.random — this OTP gates login
     const otpHash = await bcrypt.hash(otp, 10);
     await PhoneOtp.create({ phone, otpHash, expiresAt: new Date(Date.now() + OTP_EXPIRY_MS) });
 

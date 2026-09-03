@@ -7,6 +7,7 @@ const express   = require("express");
 const http      = require("http");
 const cors      = require("cors");
 const helmet    = require("helmet");
+const compression = require("compression");
 const mongoSanitize = require("express-mongo-sanitize");
 const morgan    = require("morgan");
 const rateLimit = require("express-rate-limit");
@@ -64,6 +65,11 @@ app.set("trust proxy", 1);
 // script even if some other part of the app had an XSS bug, since the
 // browser refuses to execute or load anything from a domain not
 // explicitly listed here.
+// Gzips every JSON/HTML response — cheap CPU cost, meaningfully smaller
+// payloads over the wire, especially for the larger list endpoints
+// (bookings/stores) and on mobile connections.
+app.use(compression());
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -76,14 +82,6 @@ app.use(helmet({
     },
   },
 }));
-
-// Strips out any request body/query/param keys starting with "$" or
-// containing "." — MongoDB's own query-operator syntax. Without this,
-// a maliciously crafted JSON body (e.g. {"email": {"$ne": null}})
-// could manipulate a query's actual logic instead of being treated as
-// a literal value to search for, since Express's JSON parser has no
-// way to know the difference on its own.
-app.use(mongoSanitize());
 
 // Allow both localhost (browser testing on this PC) and any LAN IP
 // (phone testing on the same WiFi) — CORS checks the exact origin
@@ -110,6 +108,14 @@ app.use(cors({
         ? callback(null, true)
         : callback(new Error("Not allowed by CORS"));
     }
+    // No ALLOWED_ORIGINS configured. In production this must NOT fall
+    // through to the permissive dev regex below — that would silently
+    // accept any localhost/LAN-shaped origin from the public internet
+    // (combined with credentials:true) simply because someone forgot to
+    // set the env var. Fail closed instead of failing open.
+    if (process.env.NODE_ENV === "production") {
+      return callback(new Error("Not allowed by CORS — ALLOWED_ORIGINS is not configured"));
+    }
     // Dev mode fallback — localhost + any local network IP.
     const isDevOrigin = origin === "http://localhost:5173"
       || /^http:\/\/192\.168\.\d+\.\d+:5173$/.test(origin)
@@ -122,8 +128,28 @@ app.use(cors({
 const limiter = rateLimit({ windowMs: 15*60*1000, max: 200, message: { success: false, message: "Too many requests." } });
 app.use("/api/", limiter);
 
+// Sensitive endpoints get a much tighter budget than the general API
+// limiter above — 200 req/15min per IP is fine for normal browsing but
+// does almost nothing to slow down password/OTP guessing, since an
+// attacker gets 200 attempts in the same window. This caps login,
+// registration, OTP, and payment-verification attempts specifically.
+const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 20, message: { success: false, message: "Too many attempts. Please try again later." } });
+app.use("/api/auth", authLimiter);
+app.use("/api/payments", authLimiter);
+
 app.use(express.json({ limit: "12mb" }));
 app.use(express.urlencoded({ extended: true, limit: "12mb" }));
+
+// Strips out any request body/query/param keys starting with "$" or
+// containing "." — MongoDB's own query-operator syntax. Without this,
+// a maliciously crafted JSON body (e.g. {"email": {"$ne": null}})
+// could manipulate a query's actual logic instead of being treated as
+// a literal value to search for, since Express's JSON parser has no
+// way to know the difference on its own. MUST run after the body
+// parsers above — mongoSanitize only sees req.body once express.json()
+// has actually populated it; running it earlier silently sanitizes
+// nothing but req.query/req.params.
+app.use(mongoSanitize());
 
 if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
 

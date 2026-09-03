@@ -4,7 +4,6 @@
 
 require("dotenv").config();
 const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
 
 const User  = require("../models/User");
 const Store = require("../models/Store");
@@ -19,8 +18,11 @@ const seed = async () => {
     await Store.deleteMany({});
     console.log("🗑️  Cleared existing data");
 
-    // Create demo users
-    const password = await bcrypt.hash("demo123", 10);
+    // Create demo users — plain text here is intentional: the User
+    // schema's own pre("save") hook hashes it on create. Pre-hashing it
+    // here too (as this line previously did) would double-hash it,
+    // silently making every demo account's real password unusable.
+    const password = "demo123";
 
     const admin = await User.create({
       name: "Admin",

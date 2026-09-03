@@ -52,18 +52,21 @@ export default function CustomerChatModal({ open, onClose, store }) {
     fetchThread(true);
   }, [open, store?._id]);
 
-  // Guaranteed fallback — polls every 3s while the chat is open. This
-  // is the primary reliability mechanism; the socket listener below is
-  // purely a speed bonus on top of it, never a requirement.
+  // Safety-net fallback — polls every 3s while the chat is open. Chat is
+  // the one place where delivery lag is directly felt by two people
+  // mid-conversation, so this stays fast even though the socket (see
+  // utils/socket.js) is now a reliable real websocket and handles the
+  // common case instantly on its own — this interval only matters when
+  // that socket event is missed, and even then the gap shouldn't be
+  // noticeable.
   useEffect(() => {
     if (!open || !store?._id) return;
     const interval = setInterval(() => fetchThread(false), 3000);
     return () => clearInterval(interval);
   }, [open, store?._id]);
 
-  // Socket-based instant update — best-effort only. Even if this never
-  // fires at all (dropped connection, blocked WebSocket, whatever),
-  // the polling above still guarantees delivery within a few seconds.
+  // Socket-based instant update — the primary delivery path. The
+  // polling above is just a backstop in case an event is missed.
   useEffect(() => {
     if (!open || !store?._id) return;
     const socket = getSocket();

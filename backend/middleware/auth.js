@@ -11,7 +11,11 @@ const protect = async (req, res, next) => {
   if (!token) return res.status(401).json({ success:false, message:"Please login to continue" });
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Pinning the algorithm is defense-in-depth against algorithm-
+    // confusion attacks (e.g. a token crafted with alg:"none" or a
+    // mismatched signing scheme) — this app always signs with HS256,
+    // so verification should never accept anything else.
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
     req.user = await User.findById(decoded.id);
     if (!req.user)       return res.status(401).json({ success:false, message:"User not found" });
     if (!req.user.isActive) return res.status(401).json({ success:false, message:"Account deactivated" });

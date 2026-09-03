@@ -96,9 +96,12 @@ export default function OwnerMessages({ activeId: activeIdProp, setActiveId: set
     if (activeId) openThread(activeId, true);
   }, []); // deliberately once on mount only
 
-  // Guaranteed fallback — polls the list every 4s, and the active
-  // thread (if one is open) every 3s. This is the primary reliability
-  // mechanism; the socket listener below is purely a speed bonus.
+  // Safety-net fallback — polls the list every 4s, and the active
+  // thread (if one is open) every 3s. Chat is the one place where
+  // delivery lag is directly felt by two people mid-conversation, so
+  // this stays fast even though the socket below is now a reliable
+  // real websocket and handles the common case instantly on its own —
+  // this interval only matters when that socket event is missed.
   useEffect(() => {
     const listInterval = setInterval(fetchList, 4000);
     return () => clearInterval(listInterval);
@@ -110,9 +113,8 @@ export default function OwnerMessages({ activeId: activeIdProp, setActiveId: set
     return () => clearInterval(threadInterval);
   }, [activeId]);
 
-  // Socket-based instant update — best-effort only. Even if this never
-  // fires (dropped connection, blocked WebSocket, etc.), the polling
-  // above still guarantees delivery within a few seconds.
+  // Socket-based instant update — the primary delivery path. The
+  // polling above is just a backstop in case an event is missed.
   useEffect(() => {
     const socket = getSocket();
     socket.off("chat:message");

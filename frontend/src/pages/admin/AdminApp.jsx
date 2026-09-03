@@ -65,7 +65,7 @@ function StoreDetailModal({ storeId, onClose, onRemoved }) {
 
   return (
     <div style={{ position:"fixed", inset:0, background:"#0F0F1A", zIndex:250, overflowY:"auto" }}>
-      <div style={{ width:"100%", maxWidth:440, margin:"0 auto", minHeight:"100vh", background:"#0F0F1A" }}>
+      <div style={{ width:"100%", maxWidth:"var(--app-width)", margin:"0 auto", minHeight:"100vh", background:"#0F0F1A" }}>
       <div style={{ display:"flex", alignItems:"center", gap:12, padding:"20px 16px", borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
         <button onClick={onClose} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:10, width:36, height:36, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
           <ArrowLeft size={18} color="#fff" />
@@ -230,7 +230,7 @@ function CustomerDetailModal({ customerId, onClose }) {
 
   return (
     <div style={{ position:"fixed", inset:0, background:"#0F0F1A", zIndex:250, overflowY:"auto" }}>
-      <div style={{ width:"100%", maxWidth:440, margin:"0 auto", minHeight:"100vh", background:"#0F0F1A" }}>
+      <div style={{ width:"100%", maxWidth:"var(--app-width)", margin:"0 auto", minHeight:"100vh", background:"#0F0F1A" }}>
       <div style={{ display:"flex", alignItems:"center", gap:12, padding:"20px 16px", borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
         <button onClick={onClose} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:10, width:36, height:36, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
           <ArrowLeft size={18} color="#fff" />
@@ -1018,7 +1018,7 @@ export default function AdminApp() {
         }, {});
         return (
           <div style={{ position:"fixed", inset:0, background:"#0F0F1A", zIndex:240, overflowY:"auto" }}>
-            <div style={{ width:"100%", maxWidth:440, margin:"0 auto", minHeight:"100vh", background:"#0F0F1A" }}>
+            <div style={{ width:"100%", maxWidth:"var(--app-width)", margin:"0 auto", minHeight:"100vh", background:"#0F0F1A" }}>
               <div style={{ display:"flex", alignItems:"center", gap:12, padding:"20px 16px", borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
                 <button onClick={() => setCatDetail(null)} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:10, width:36, height:36, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
                   <ArrowLeft size={18} color="#fff" />
@@ -1073,7 +1073,7 @@ export default function AdminApp() {
       {/* Full-screen photo viewer — lets admin inspect store photos clearly before approving */}
       {photoViewer && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", zIndex:300, display:"flex", justifyContent:"center" }}>
-        <div style={{ width:"100%", maxWidth:440, display:"flex", flexDirection:"column" }}>
+        <div style={{ width:"100%", maxWidth:"var(--app-width)", display:"flex", flexDirection:"column" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 16px 12px" }}>
             <div>
               <p style={{ color:"#fff", fontSize:14, fontWeight:900 }}>{photoViewer.storeName}</p>

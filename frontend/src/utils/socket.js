@@ -23,8 +23,7 @@ export function getSocket() {
   if (socket) return socket;
 
   socket = io(SOCKET_URL, {
-    transports: ["polling"], // websocket upgrades are blocked on this network — polling only, avoids the connect/drop/reconnect cycle
-    upgrade: false,
+    transports: ["polling", "websocket"], // start on polling (works everywhere), upgrade to websocket when the network allows it
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,

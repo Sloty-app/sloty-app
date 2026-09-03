@@ -142,7 +142,7 @@ export default function OwnerOffers({ services }) {
       {/* Create offer form — bottom sheet style */}
       {showForm && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
-          <div style={{ background:"#fff", borderRadius:"24px 24px 0 0", padding:"24px 20px 32px", width:"100%", maxWidth:440, maxHeight:"85vh", overflowY:"auto" }}>
+          <div style={{ background:"#fff", borderRadius:"24px 24px 0 0", padding:"24px 20px 32px", width:"100%", maxWidth:"var(--app-width)", maxHeight:"85vh", overflowY:"auto" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
               <h3 style={{ fontSize:17, fontWeight:900, color:C.text }}>Create Offer</h3>
               <button onClick={() => {setShowForm(false); resetForm();}} style={{ background:"#F0F2F8", border:"none", borderRadius:10, width:32, height:32, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>

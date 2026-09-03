@@ -19,9 +19,25 @@
   --radius-sm: 12px;
   --radius-md: 18px;
   --radius-lg: 24px;
+  --radius-xl: 28px; /* the large "hero surface" corners — top bar, bottom nav */
   --app-width: 440px;
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+/* The whole app is built as a single centered column (a deliberate,
+   common pattern for consumer apps — not itself the problem). What
+   read as broken/unfinished was that this column stayed a fixed phone
+   width even in a full desktop browser, with nothing but flat empty
+   grey on either side. These two steps widen the column at larger
+   viewports (still comfortable for the existing card-based layouts —
+   this isn't a multi-column desktop redesign) and, at desktop widths,
+   give the space around it an intentional look instead of empty fill. */
+@media (min-width: 700px) {
+  :root { --app-width: 620px; }
+}
+@media (min-width: 1100px) {
+  :root { --app-width: 760px; }
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -45,6 +61,24 @@ html, body {
   overflow-x: hidden;
   position: relative;
   background: var(--bg);
+}
+
+/* At desktop widths the centered column now has real empty space on
+   either side (see --app-width breakpoints above) — a soft brand-tinted
+   backdrop makes that space read as an intentional frame instead of
+   "forgot to make this responsive". This only touches the page
+   background, not .app-shell itself — several elements inside it
+   (BottomNav, bottom sheets) are position:fixed to the actual viewport
+   edge rather than to .app-shell's own box, so giving .app-shell a
+   margin/rounded card treatment here would visually detach them from
+   it. Stays off below 1100px, where the column already fills most of
+   the viewport. */
+@media (min-width: 1100px) {
+  html, body {
+    background:
+      radial-gradient(ellipse 900px 700px at 50% 0%, color-mix(in srgb, var(--pri) 7%, transparent), transparent 70%),
+      var(--bg);
+  }
 }
 
 ::-webkit-scrollbar { display: none; }

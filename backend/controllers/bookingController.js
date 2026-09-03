@@ -1,5 +1,6 @@
 // controllers/bookingController.js
 const mongoose = require("mongoose");
+const crypto   = require("crypto");
 const Booking  = require("../models/Booking");
 const Store    = require("../models/Store");
 const SlotCapacity = require("../models/SlotCapacity");
@@ -131,7 +132,7 @@ exports.getAvailableSlots = async (req, res) => {
     });
   } catch (err) {
     console.error("SLOTS ERROR:", err.message);
-    res.status(500).json({ success:false, message:"Server error", error: err.message });
+    res.status(500).json({ success:false, message:"Server error", error: process.env.NODE_ENV==="development"?err.message:undefined });
   }
 };
 
@@ -225,7 +226,7 @@ exports.createBooking = async (req, res) => {
 
     const todayCount  = await Booking.countDocuments({ store:storeId, date, staffId: resolvedStaffId, status:{ $in:["confirmed","in_progress","completed"] } });
     const tokenNumber = Booking.generateToken(todayCount);
-    const otp         = Math.floor(1000 + Math.random() * 9000).toString();
+    const otp         = crypto.randomInt(1000, 10000).toString(); // CSPRNG — this OTP gates in-person visit verification
 
     // Estimate travel time from customer's location (captured once, at booking
     // time) to the store's location, so the reminder job knows how early to
@@ -374,14 +375,25 @@ exports.createBooking = async (req, res) => {
       return res.status(400).json({ success:false, message:"This slot is fully booked. Please choose another time." });
     }
     console.error("BOOKING ERROR:", err.message);
-    res.status(500).json({ success:false, message:"Server error", error: err.message });
+    res.status(500).json({ success:false, message:"Server error", error: process.env.NODE_ENV==="development"?err.message:undefined });
   }
 };
 
 // GET /api/bookings/my — Customer's own bookings
+// page/limit are optional — omitting them returns the first (most
+// recent) 200, which covers every real customer's full history today;
+// the params exist so this stays fast once someone has years of
+// bookings, without changing behavior for anyone below that size.
 exports.getMyBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({ customer:req.user.id }).populate("store","name address phone city category location").sort({ createdAt:-1 });
+    const limit = Math.min(Number(req.query.limit) || 200, 200);
+    const page  = Math.max(Number(req.query.page) || 1, 1);
+    const bookings = await Booking.find({ customer:req.user.id })
+      .populate("store","name address phone city category location")
+      .sort({ createdAt:-1 })
+      .skip((page-1)*limit)
+      .limit(limit)
+      .lean();
     res.status(200).json({ success:true, count:bookings.length, bookings });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
@@ -406,7 +418,14 @@ exports.getStoreBookings = async (req, res) => {
       if (from) filter.date.$gte = from;
       if (to)   filter.date.$lte = to;
     }
-    const bookings = await Booking.find(filter).populate("customer", "name phone").sort({ date: -1, timeSlot: 1 });
+    // otp is excluded — it exists so the OWNER can verify the customer
+    // physically showed up by asking them to say/enter it, so it must
+    // never be readable from the owner's own dashboard.
+    // .limit(500) is a safety cap, not a real pagination UI — a
+    // date-filtered query (the normal case for this tab) never gets
+    // close to it; it just stops an unfiltered "show everything" call
+    // from pulling a store's entire multi-year history into memory.
+    const bookings = await Booking.find(filter).select("-otp").populate("customer", "name phone").sort({ date: -1, timeSlot: 1 }).limit(500).lean();
 
     // Lifetime visit count per customer at this store — deliberately NOT
     // limited to the date range just queried, since "is this a repeat
@@ -425,8 +444,9 @@ exports.getStoreBookings = async (req, res) => {
       ]);
       visitCounts = Object.fromEntries(counts.map(c => [c._id, c.count]));
     }
+    // .lean() docs are already plain objects (no .toObject() to call).
     const bookingsWithVisits = bookings.map(b => ({
-      ...b.toObject(),
+      ...b,
       customerVisitCount: visitCounts[b.customerPhone] || 1,
     }));
 
@@ -450,7 +470,10 @@ exports.getCustomerHistory = async (req, res) => {
     }
 
     const bookings = await Booking.find({ store: req.params.storeId, customerPhone: req.params.phone })
-      .sort({ date: -1, timeSlot: -1 });
+      .select("-otp")
+      .sort({ date: -1, timeSlot: -1 })
+      .limit(300) // safety cap only — no real customer has anywhere near this many visits at one store
+      .lean();
 
     res.status(200).json({ success: true, bookings });
   } catch (err) {
@@ -903,7 +926,7 @@ exports.getBlockedDates = async (req, res) => {
     res.status(200).json({ success:true, blockedDates: entries });
   } catch (err) {
     console.error("getBlockedDates error:", err.message);
-    res.status(500).json({ success:false, message:"Server error", error: err.message });
+    res.status(500).json({ success:false, message:"Server error", error: process.env.NODE_ENV==="development"?err.message:undefined });
   }
 };
 
@@ -934,7 +957,7 @@ exports.addBlockedDate = async (req, res) => {
     res.status(201).json({ success:true, message:"Blocked date saved", blockedDates: store.blockedSlots });
   } catch (err) {
     console.error("addBlockedDate error:", err.message);
-    res.status(500).json({ success:false, message:"Server error", error: err.message });
+    res.status(500).json({ success:false, message:"Server error", error: process.env.NODE_ENV==="development"?err.message:undefined });
   }
 };
 
@@ -955,7 +978,7 @@ exports.removeBlockedDate = async (req, res) => {
     res.status(200).json({ success:true, message:"Date re-opened for booking", blockedDates: store.blockedSlots });
   } catch (err) {
     console.error("removeBlockedDate error:", err.message);
-    res.status(500).json({ success:false, message:"Server error", error: err.message });
+    res.status(500).json({ success:false, message:"Server error", error: process.env.NODE_ENV==="development"?err.message:undefined });
   }
 };
 

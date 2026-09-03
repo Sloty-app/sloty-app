@@ -55,6 +55,15 @@ const BookingSchema = new mongoose.Schema({
 
   paymentMode:   { type: String, enum: ["cash","upi","card"], default: "cash" },
   paymentStatus: { type: String, enum: ["pending","paid"],   default: "pending" },
+  // Set by paymentController when a UPI payment is initiated/verified —
+  // without these declared here, Mongoose's default strict mode silently
+  // drops both fields on save (same class of bug serviceBreakdown had
+  // above), which breaks payment verification entirely: verifyPayment
+  // re-fetches the booking and compares its stored razorpayOrderId
+  // against the client-supplied one, and that comparison can never
+  // succeed against a field that was never actually persisted.
+  razorpayOrderId:   { type: String, default: null },
+  razorpayPaymentId: { type: String, default: null },
 
   // Services the owner adds AFTER the original booking — e.g. customer
   // came in for a haircut, barber recommends a beard trim too. Kept
@@ -105,5 +114,10 @@ BookingSchema.index(
 // Hot query indexes — speeds up owner dashboard, customer bookings, slot checks
 BookingSchema.index({ store: 1, date: 1 });
 BookingSchema.index({ customer: 1 });
+// getLiveQueue/getAvailableSlots filter store+date+status on every call
+// — extends the index above so Mongo can satisfy the status filter
+// from the index itself instead of scanning every matching store+date
+// document in memory.
+BookingSchema.index({ store: 1, date: 1, status: 1 });
 
 module.exports = mongoose.model("Booking", BookingSchema);

@@ -570,14 +570,20 @@ export default function CustomerApp() {
   const [reportMessage,  setReportMessage]  = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
 
-  const showToast = (msg, type="success") => setToast({ msg, type });
+  const showToast = useCallback((msg, type="success") => setToast({ msg, type }), []);
   const dates = getNext7Days();
   const activeStaff = selStore?.staff?.filter(s => s.isActive) || [];
   const needsStaff = !!(selStore?.hasStaff && activeStaff.length > 0);
   const staffSpecs = ["All", ...new Set(activeStaff.map(s => s.specialization).filter(Boolean))];
   const visibleStaff = staffSpecFilter === "All" ? activeStaff : activeStaff.filter(s => s.specialization === staffSpecFilter);
 
-  const openBooking = (store) => {
+  // Shared across every StoreCard list — one stable reference instead
+  // of a fresh inline arrow function at each of the three render sites,
+  // so memoized cards don't re-render just because this prop identity
+  // changed on every parent render.
+  const handleSelectStore = useCallback((s) => { setSelStore(s); setScreen("detail"); }, []);
+
+  const openBooking = useCallback((store) => {
     setSelStore(store);
     setSelServices([]);
     setSelStaff(null);
@@ -588,7 +594,7 @@ export default function CustomerApp() {
     setScreen("booking");
     // Fetch fresh wallet balance each time booking screen opens
     api("GET", "/referral/my").then(res => { setWalletBalance(res.walletBalance || 0); setReferralEnabled(!!res.programEnabled); }).catch(()=>{});
-  };
+  }, []);
 
   // Toggles a service in/out of the multi-select. Matched by name since
   // that's the stable identifier shared with the backend's service list.
@@ -802,7 +808,7 @@ export default function CustomerApp() {
     showToast(ok ? "Link copied to clipboard!" : "Couldn't copy link — please try again", ok ? "success" : "error");
   };
 
-  const toggleFavorite = async (store) => {
+  const toggleFavorite = useCallback(async (store) => {
     const id = store._id;
     const wasFav = favoriteIds.has(id);
     setFavoriteIds(prev => {
@@ -821,7 +827,7 @@ export default function CustomerApp() {
       });
       showToast(e.message, "error");
     }
-  };
+  }, [favoriteIds, showToast]);
 
   // ── Live queue position ──────────────────────────────────────────────────
   const refreshQueuePositions = async (bookingsList) => {
@@ -1458,7 +1464,7 @@ export default function CustomerApp() {
   // never collects a phone number at all.
   if (needsProfileCompletion) return (
     <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
-      <div style={{ background:C.card, borderRadius:"28px 28px 0 0", padding:"28px 24px 40px", width:"100%", maxWidth:440 }}>
+      <div style={{ background:C.card, borderRadius:"28px 28px 0 0", padding:"28px 24px 40px", width:"100%", maxWidth:"var(--app-width)" }}>
         <div style={{ width:40, height:4, borderRadius:4, background:"#E0E4EF", margin:"0 auto 20px" }} />
         <h2 style={{ fontSize:20, fontWeight:900, color:C.text, marginBottom:6 }}>Complete your profile</h2>
         <p style={{ fontSize:13, color:C.muted, marginBottom:24 }}>We need a few details to show stores near you and confirm bookings.</p>
@@ -1628,7 +1634,7 @@ export default function CustomerApp() {
                 <StoreCard
                   key={store._id}
                   store={store}
-                  onSelect={(s) => { setSelStore(s); setScreen("detail"); }}
+                  onSelect={handleSelectStore}
                   onBook={openBooking}
                   isFavorite={favoriteIds.has(store._id)}
                   onToggleFavorite={toggleFavorite}
@@ -1741,7 +1747,7 @@ export default function CustomerApp() {
               <StoreCard
                 key={store._id}
                 store={store}
-                onSelect={(s) => { setSelStore(s); setScreen("detail"); }}
+                onSelect={handleSelectStore}
                 onBook={openBooking}
                 isFavorite={favoriteIds.has(store._id)}
                 onToggleFavorite={toggleFavorite}
@@ -1776,7 +1782,7 @@ export default function CustomerApp() {
           <StoreCard
             key={store._id}
             store={store}
-            onSelect={(s) => { setSelStore(s); setScreen("detail"); }}
+            onSelect={handleSelectStore}
             onBook={openBooking}
             isFavorite={favoriteIds.has(store._id)}
             onToggleFavorite={toggleFavorite}
@@ -2098,7 +2104,7 @@ export default function CustomerApp() {
           )}
         </Card>
       </div>
-      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:440, padding:"12px 20px 24px", background:C.card, boxShadow:"0 -4px 20px rgba(0,0,0,0.08)" }}>
+      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"12px 20px 24px", background:C.card, boxShadow:"0 -4px 20px rgba(0,0,0,0.08)" }}>
         <Btn onClick={() => openBooking(selStore)} disabled={!selStore.isOpen}>
           {selStore.isOpen?"Book a Slot":"Store is Closed"}
         </Btn>
@@ -2270,7 +2276,7 @@ export default function CustomerApp() {
         </Card>
         {err && <div style={{ background:C.red+"15", borderRadius:12, padding:12, marginBottom:14, display:"flex", gap:8, alignItems:"center" }}><AlertCircle size={16} color={C.red} /><p style={{ color:C.red, fontSize:12, fontWeight:700 }}>{err}</p></div>}
       </div>
-      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:440, padding:"12px 20px 24px", background:C.card, boxShadow:"0 -4px 20px rgba(0,0,0,0.08)" }}>
+      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"12px 20px 24px", background:C.card, boxShadow:"0 -4px 20px rgba(0,0,0,0.08)" }}>
         {selServices.length>0 && selSlot && (() => {
           // Offer discount is computed the same way the backend will —
           // this is a client-side preview only; the actual charge is
@@ -2652,7 +2658,7 @@ export default function CustomerApp() {
           it durable, same lesson learned from the chat feature). */}
       {showReferral && (
         <div style={{ position:"fixed", inset:0, zIndex:100, display:"flex", justifyContent:"center" }}>
-          <div style={{ width:"100%", maxWidth:440, background:C.bg, overflowY:"auto", fontFamily:"'Nunito',sans-serif" }}>
+          <div style={{ width:"100%", maxWidth:"var(--app-width)", background:C.bg, overflowY:"auto", fontFamily:"'Nunito',sans-serif" }}>
             <div style={{ background:`linear-gradient(100deg,${C.pri},#DB2777)`, padding:"52px 20px 24px" }}>
               <button onClick={() => setShowReferral(false)} style={{ background:"rgba(255,255,255,0.2)", border:"none", borderRadius:12, width:36, height:36, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", marginBottom:12 }}>
                 <ArrowLeft size={18} color="#fff" />

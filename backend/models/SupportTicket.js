@@ -21,4 +21,9 @@ const SupportTicketSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
+// A user's own ticket list, and the admin queue filtered by status —
+// the two actual query patterns this collection sees.
+SupportTicketSchema.index({ user: 1, createdAt: -1 });
+SupportTicketSchema.index({ status: 1, createdAt: -1 });
+
 module.exports = mongoose.model("SupportTicket", SupportTicketSchema);

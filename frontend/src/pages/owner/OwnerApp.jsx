@@ -999,6 +999,23 @@ export default function OwnerApp() {
     { key:"settings",  icon:Settings,        label:"Settings"  },
   ];
 
+  // 10 tabs don't fit one screen width — without this, tabs past the
+  // visible edge are silently undiscoverable (no scrollbar shown, no
+  // hint anything's cut off). This tracks whether the bar can still
+  // scroll right so a fade+arrow hint can be shown/hidden accordingly.
+  const tabBarRef = useRef(null);
+  const [showTabScrollHint, setShowTabScrollHint] = useState(false);
+  const checkTabScrollHint = () => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    setShowTabScrollHint(el.scrollWidth > el.clientWidth + 4 && el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  };
+  useEffect(() => {
+    checkTabScrollHint();
+    window.addEventListener("resize", checkTabScrollHint);
+    return () => window.removeEventListener("resize", checkTabScrollHint);
+  }, [tab, myStore?._id]);
+
   if (loading) return (
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, fontFamily:"'Nunito',sans-serif" }}>
       <Loader text="Loading your store..." />
@@ -1192,13 +1209,23 @@ export default function OwnerApp() {
       </div>
 
       {/* Tab Bar */}
-      <div style={{ background:C.card, display:"flex", overflowX:"auto", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", scrollbarWidth:"none" }}>
-        {TABS.map(({ key, icon: Icon, label }) => (
-          <button key={key} onClick={() => setTab(key)} style={{ flexShrink:0, padding:"13px 16px", border:"none", borderBottom:`3px solid ${tab===key?C.pri:"transparent"}`, background:"transparent", color:tab===key?C.pri:C.muted, fontWeight:tab===key?900:600, cursor:"pointer", fontSize:12, fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}>
-            <Icon size={15} color={tab===key?C.pri:C.muted} strokeWidth={tab===key?2.5:1.8} />
-            {label}
-          </button>
-        ))}
+      <div style={{ position:"relative", background:C.card, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
+        <div ref={tabBarRef} onScroll={checkTabScrollHint} style={{ display:"flex", overflowX:"auto", scrollbarWidth:"none" }}>
+          {TABS.map(({ key, icon: Icon, label }) => (
+            <button key={key} onClick={() => setTab(key)} style={{ flexShrink:0, padding:"13px 16px", border:"none", borderBottom:`3px solid ${tab===key?C.pri:"transparent"}`, background:"transparent", color:tab===key?C.pri:C.muted, fontWeight:tab===key?900:600, cursor:"pointer", fontSize:12, fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}>
+              <Icon size={15} color={tab===key?C.pri:C.muted} strokeWidth={tab===key?2.5:1.8} />
+              {label}
+            </button>
+          ))}
+        </div>
+        {/* Fade + arrow hint — only shown while there are more tabs off
+            the right edge, so it's not misleading once you've scrolled
+            all the way through. */}
+        {showTabScrollHint && (
+          <div style={{ position:"absolute", top:0, right:0, bottom:0, width:36, background:`linear-gradient(90deg, transparent, ${C.card} 65%)`, display:"flex", alignItems:"center", justifyContent:"flex-end", pointerEvents:"none" }}>
+            <ChevronRight size={14} color={C.muted} style={{ marginRight:2 }} />
+          </div>
+        )}
       </div>
 
       <div style={{ padding:16 }}>

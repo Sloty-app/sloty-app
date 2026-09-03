@@ -57,6 +57,27 @@ exports.getStore = async (req, res) => {
 // anywhere, which is exactly the gap being closed here.
 const isPlaceholderEmail = (email) => /^\d{10}@(owner\.)?sloty\.com$/i.test(email || "");
 
+// Fields an owner is allowed to set on their own store. Everything else
+// on the Store schema (isApproved, pendingUpiBalance, owner, rating,
+// approvedBy/approvedAt, removedAt/removedBy, totalBookings, reviews...)
+// is either admin-controlled or system-computed — accepting the raw
+// request body here would let an owner self-approve their own store or
+// forge other status/audit fields via a crafted request.
+const OWNER_STORE_FIELDS = [
+  "name", "category", "description", "phone", "whatsapp", "address",
+  "city", "area", "pincode", "location", "services", "hasStaff",
+  "slotCapacity", "staff", "workingHours", "slotDuration",
+  "maxAdvanceBooking", "breakTimes", "isOpen", "photos",
+];
+
+const pickOwnerStoreFields = (body) => {
+  const out = {};
+  for (const key of OWNER_STORE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(body, key)) out[key] = body[key];
+  }
+  return out;
+};
+
 // POST /api/stores — Owner registers their store
 exports.createStore = async (req, res) => {
   try {
@@ -75,23 +96,21 @@ exports.createStore = async (req, res) => {
       return res.status(400).json({ success:false, message:"Please enter your real email address, not an auto-generated one" });
     }
 
-    req.body.owner = req.user.id;
     const exists = await Store.findOne({ owner:req.user.id, name:req.body.name });
     if (exists) return res.status(400).json({ success:false, message:"You already have a store with this name" });
 
-    // email isn't an actual Store schema field — it's only being used
-    // here to update the owner's own account, then removed before
-    // creating the Store document so it doesn't get silently dropped
-    // or cause a schema validation surprise.
-    const ownerEmail = req.body.email.trim();
-    delete req.body.email;
-
-    const store = await Store.create(req.body);
+    // Only whitelisted fields make it onto the document — status/audit
+    // fields like isApproved, pendingUpiBalance, and owner are always
+    // set here explicitly, never taken from the request body.
+    const store = await Store.create({
+      ...pickOwnerStoreFields(req.body),
+      owner: req.user.id,
+    });
 
     // Update the owner's real account email — this is what makes
     // future "New Booking" notifications actually reach them, instead
     // of silently going to their auto-generated placeholder address.
-    await User.findByIdAndUpdate(req.user.id, { email: ownerEmail }, { runValidators: true }).catch(err => {
+    await User.findByIdAndUpdate(req.user.id, { email: email.trim() }, { runValidators: true }).catch(err => {
       // A duplicate-email collision here is a genuine edge case (this
       // email already used by another account) — logged, but doesn't
       // block store registration itself from succeeding.
@@ -131,7 +150,11 @@ exports.updateStore = async (req, res) => {
     const store = await Store.findById(req.params.id);
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
     if (store.owner.toString()!==req.user.id && req.user.role!=="admin") return res.status(403).json({ success:false, message:"Not authorized" });
-    const updated = await Store.findByIdAndUpdate(req.params.id, req.body, { new:true, runValidators:true });
+    // Owners only ever get the whitelisted fields applied — status/audit
+    // fields stay admin-only. Admins updating a store through this same
+    // route (e.g. support edits) get the same restriction; approving a
+    // store is a separate, dedicated admin action, not a generic PUT.
+    const updated = await Store.findByIdAndUpdate(req.params.id, pickOwnerStoreFields(req.body), { new:true, runValidators:true });
     res.status(200).json({ success:true, message:"Store updated", store:updated });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
@@ -201,7 +224,7 @@ exports.rejectStore = async (req, res) => {
 // GET /api/stores/admin/pending — Admin sees all pending stores
 exports.getPendingStores = async (req, res) => {
   try {
-    const stores = await Store.find({ isApproved:false, isActive:true }).populate("owner","name email phone").sort({ createdAt:-1 });
+    const stores = await Store.find({ isApproved:false, isActive:true }).populate("owner","name email phone").sort({ createdAt:-1 }).lean();
     res.status(200).json({ success:true, count:stores.length, stores });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
@@ -211,7 +234,11 @@ exports.getPendingStores = async (req, res) => {
 // GET /api/stores/admin/all — Admin sees ALL stores
 exports.getAllStores = async (req, res) => {
   try {
-    const stores = await Store.find({}).populate("owner","name email phone").sort({ createdAt:-1 });
+    // .limit(1000) is a safety cap — every store on the platform, no
+    // real deployment is anywhere near that yet, but this stops the
+    // admin dashboard's full-store-list call from becoming a genuine
+    // problem once it eventually is.
+    const stores = await Store.find({}).populate("owner","name email phone").sort({ createdAt:-1 }).limit(1000).lean();
     res.status(200).json({ success:true, count:stores.length, stores });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });

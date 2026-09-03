@@ -10,7 +10,7 @@ export const Badge = ({ color, text }) => (
 
 export function Card({ children, style={} }) {
   return (
-    <div style={{ background:C.card, borderRadius:20, padding:16, marginBottom:14, boxShadow:"0 2px 20px rgba(0,0,0,0.06)", transition:"box-shadow 0.25s var(--ease, ease), transform 0.2s var(--ease, ease)", ...style }}>
+    <div style={{ background:C.card, borderRadius:"var(--radius-lg)", padding:16, marginBottom:14, boxShadow:"var(--shadow-sm)", transition:"box-shadow 0.25s var(--ease, ease), transform 0.2s var(--ease, ease)", ...style }}>
       {children}
     </div>
   );
@@ -23,7 +23,7 @@ export function Btn({ children, onClick, color=C.pri, disabled=false, outline=fa
       background: disabled?"#E0E4EF": outline?"transparent":color,
       color: disabled?"#AAB": outline?color:"#fff",
       border: outline?`2px solid ${color}`:"none",
-      borderRadius: small?10:14, fontSize: small?12:14,
+      borderRadius: small?"var(--radius-sm)":"var(--radius-md)", fontSize: small?12:14,
       fontWeight:800, cursor:disabled?"not-allowed":"pointer",
       width: full?"100%":"auto",
       boxShadow: (!disabled && !outline) ? `0 6px 18px ${color}33` : "none",
@@ -36,7 +36,7 @@ export function Input({ label, error, ...props }) {
   return (
     <div style={{ marginBottom:12 }}>
       {label && <label style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, display:"block", marginBottom:5 }}>{label.toUpperCase()}</label>}
-      <input {...props} style={{ width:"100%", padding:"13px 16px", border:`2px solid ${error?"#FF6B6B":"#E8ECF5"}`, borderRadius:12, fontSize:14, color:C.text, background:C.inputBg, outline:"none", fontFamily:"'Nunito',sans-serif", boxSizing:"border-box", transition:"border-color 0.2s var(--ease, ease), box-shadow 0.2s var(--ease, ease)", ...props.style }} />
+      <input {...props} style={{ width:"100%", padding:"13px 16px", border:`2px solid ${error?"#FF6B6B":"#E8ECF5"}`, borderRadius:"var(--radius-sm)", fontSize:14, color:C.text, background:C.inputBg, outline:"none", fontFamily:"'Nunito',sans-serif", boxSizing:"border-box", transition:"border-color 0.2s var(--ease, ease), box-shadow 0.2s var(--ease, ease)", ...props.style }} />
       {error && (
         <p style={{ color:C.red, fontSize:11, marginTop:4, display:"flex", alignItems:"center", gap:4 }}>
           <AlertCircle size={11} /> {error}
@@ -50,7 +50,7 @@ export function Select({ label, children, ...props }) {
   return (
     <div style={{ marginBottom:12 }}>
       {label && <label style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, display:"block", marginBottom:5 }}>{label.toUpperCase()}</label>}
-      <select {...props} style={{ width:"100%", padding:"13px 16px", border:"2px solid #E8ECF5", borderRadius:12, fontSize:14, background:C.inputBg, color:C.text, fontFamily:"'Nunito',sans-serif", boxSizing:"border-box", transition:"border-color 0.2s var(--ease, ease)" }}>
+      <select {...props} style={{ width:"100%", padding:"13px 16px", border:"2px solid #E8ECF5", borderRadius:"var(--radius-sm)", fontSize:14, background:C.inputBg, color:C.text, fontFamily:"'Nunito',sans-serif", boxSizing:"border-box", transition:"border-color 0.2s var(--ease, ease)" }}>
         {children}
       </select>
     </div>
@@ -61,7 +61,7 @@ export function Loader({ text="Loading...", skeleton=false }) {
   if (skeleton) return (
     <div style={{ padding:"0 0 16px" }}>
       {[1,2,3].map(i => (
-        <div key={i} className="fade-in" style={{ background:C.card, borderRadius:24, marginBottom:16, overflow:"hidden", boxShadow:"0 2px 12px rgba(0,0,0,0.05)", animationDelay:`${i*0.06}s` }}>
+        <div key={i} className="fade-in" style={{ background:C.card, borderRadius:"var(--radius-lg)", marginBottom:16, overflow:"hidden", boxShadow:"var(--shadow-sm)", animationDelay:`${i*0.06}s` }}>
           <div style={{ height:120, background:"linear-gradient(90deg,#f0f2f8 25%,#e4e8f0 50%,#f0f2f8 75%)", backgroundSize:"200% 100%", animation:"shimmer 1.5s infinite" }} />
           <div style={{ padding:14 }}>
             <div style={{ height:14, width:"65%", background:"linear-gradient(90deg,#f0f2f8 25%,#e4e8f0 50%,#f0f2f8 75%)", backgroundSize:"200% 100%", animation:"shimmer 1.5s infinite", borderRadius:8, marginBottom:10 }} />
@@ -94,7 +94,7 @@ export function Toast({ message, type="success", onClose }) {
 
 export function TopBar({ title, sub, onBack, dark=false, right }) {
   return (
-    <div style={{ background: dark?C.sec:`linear-gradient(135deg,${C.pri},#E0406A)`, padding:"44px 20px 22px", borderBottomLeftRadius:28, borderBottomRightRadius:28, boxShadow:"0 8px 24px rgba(0,0,0,0.08)" }}>
+    <div style={{ background: dark?C.sec:`linear-gradient(135deg,${C.pri},#E0406A)`, padding:"44px 20px 22px", borderBottomLeftRadius:"var(--radius-xl)", borderBottomRightRadius:"var(--radius-xl)", boxShadow:"var(--shadow-md)" }}>
       <div style={{ display:"flex", alignItems:"center", gap:12 }}>
         {onBack && (
           <button onClick={onBack} style={{ background:"rgba(255,255,255,0.18)", border:"none", borderRadius:12, width:36, height:36, cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", transition:"background 0.2s var(--ease, ease)" }}>
@@ -120,7 +120,7 @@ const NAV_ICONS = {
 
 export function BottomNav({ tabs, active, onChange }) {
   return (
-    <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:440, padding:"8px 0 24px", background:C.card, display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.07)", borderTopLeftRadius:28, borderTopRightRadius:28, zIndex:100 }}>
+    <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:C.card, display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.07)", borderTopLeftRadius:"var(--radius-xl)", borderTopRightRadius:"var(--radius-xl)", zIndex:100 }}>
       {tabs.map(([,,key]) => {
         const { Icon, label } = NAV_ICONS[key] || { Icon:Home, label:key };
         const isActive = active === key;

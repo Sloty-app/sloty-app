@@ -22,5 +22,9 @@ const ConversationSchema = new mongoose.Schema({
 
 // One conversation per customer+store pair — re-used across bookings.
 ConversationSchema.index({ customer: 1, store: 1 }, { unique: true });
+// The owner-side conversation list queries by store alone (sorted by
+// recency) — the compound index above has customer first, so it can't
+// serve that query pattern efficiently on its own.
+ConversationSchema.index({ store: 1, lastMessageAt: -1 });
 
 module.exports = mongoose.model("Conversation", ConversationSchema);

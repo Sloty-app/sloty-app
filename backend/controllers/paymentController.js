@@ -112,7 +112,16 @@ exports.verifyPayment = async (req, res) => {
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
-    if (expectedSignature !== razorpay_signature) {
+    // Constant-time comparison — a plain !== leaks how many leading
+    // bytes matched via response-timing differences, which (however
+    // impractical in this instance) is exactly the class of bug you
+    // don't want on a payment-verifying comparison. Length is checked
+    // first since timingSafeEqual throws on mismatched buffer lengths
+    // rather than just returning false.
+    const signaturesMatch = typeof razorpay_signature === "string"
+      && razorpay_signature.length === expectedSignature.length
+      && crypto.timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(razorpay_signature));
+    if (!signaturesMatch) {
       return res.status(400).json({ success:false, message:"Payment verification failed — signature mismatch" });
     }
 
