@@ -40,6 +40,82 @@ const ROLES = {
   },
 };
 
+/* ── Phone number input — a plain full-width box with just a phone
+   icon read as bare/stretched, and gave no visual sense of the fixed
+   +91 country code baked into every submission. A distinct "+91"
+   segment glued to the number field (the pattern every Indian phone-
+   login screen uses) makes it read as a deliberately designed control
+   instead of a generic oversized text box. */
+function PhoneInput({ value, onChange, color=C.pri }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ marginBottom:16 }}>
+      <label style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, display:"block", marginBottom:6 }}>MOBILE NUMBER</label>
+      <div style={{ display:"flex", alignItems:"stretch", border:`2px solid ${focused?color:"#E8ECF5"}`, borderRadius:14, background:focused?"#FAFBFF":"#F8FAFF", transition:"all 0.2s", overflow:"hidden" }}>
+        <div style={{ display:"flex", alignItems:"center", padding:"0 14px", borderRight:`2px solid ${focused?color+"33":"#E8ECF5"}`, flexShrink:0 }}>
+          <span style={{ fontSize:14, fontWeight:800, color:C.text }}>+91</span>
+        </div>
+        <input
+          type="tel"
+          inputMode="numeric"
+          value={value}
+          onChange={onChange}
+          placeholder="10-digit mobile number"
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{ flex:1, minWidth:0, padding:"14px 14px 14px 10px", border:"none", background:"transparent", fontSize:15, fontWeight:700, letterSpacing:0.5, color:C.text, outline:"none", fontFamily:"'Nunito',sans-serif", boxSizing:"border-box" }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ── OTP input — six individual digit boxes instead of one oversized
+   dashed field. The real <input> stays as the single source of truth
+   (autofill, paste, SMS auto-read via autoComplete="one-time-code" all
+   keep working exactly as before) but sits invisibly on top of the
+   boxes, which just render whatever characters are currently in value —
+   the same trick behind every "6-box OTP" UI, without needing six
+   separate inputs/refs/focus-management to get right. */
+function OtpBoxes({ value, onChange, color=C.pri, length=6 }) {
+  const inputRef = useRef(null);
+  return (
+    <div style={{ marginBottom:16 }}>
+      <label style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, display:"block", marginBottom:8 }}>ENTER OTP</label>
+      <div style={{ position:"relative" }} onClick={() => inputRef.current?.focus()}>
+        <div style={{ display:"flex", gap:8 }}>
+          {Array.from({ length }).map((_, i) => {
+            const filled = value[i];
+            const isNext = i === value.length;
+            return (
+              <div key={i} style={{
+                flex:1, height:52, display:"flex", alignItems:"center", justifyContent:"center",
+                border:`2px solid ${filled ? color : isNext ? color+"88" : "#E8ECF5"}`,
+                borderRadius:12, fontSize:22, fontWeight:900, color:C.text,
+                background: filled ? color+"0D" : "#F8FAFF",
+                transition:"all 0.15s", cursor:"text",
+              }}>
+                {filled || ""}
+              </div>
+            );
+          })}
+        </div>
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={onChange}
+          type="tel"
+          inputMode="numeric"
+          maxLength={length}
+          autoComplete="one-time-code"
+          autoFocus
+          style={{ position:"absolute", inset:0, opacity:0, border:"none", outline:"none", fontFamily:"'Nunito',sans-serif" }}
+        />
+      </div>
+    </div>
+  );
+}
+
 /* ── Icon Input ── */
 function IconInput({ icon: Icon, label, type="text", value, onChange, placeholder, color=C.pri, right, ...rest }) {
   const [focused, setFocused] = useState(false);
@@ -229,10 +305,9 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
       {step === "phone" && (
         <>
           <p style={{ fontSize:13, color:C.muted, marginBottom:16, textAlign:"center" }}>Enter your mobile number to continue</p>
-          <IconInput
-            icon={Phone} label="MOBILE NUMBER" placeholder="10-digit mobile number"
+          <PhoneInput
             value={phone} onChange={e=>setPhone(e.target.value.replace(/\D/g,"").slice(0,10))}
-            type="tel" color={cfg.accent}
+            color={cfg.accent}
           />
           {err && (
             <div style={{ background:C.red+"12", border:`1.5px solid ${C.red}33`, borderRadius:12, padding:"11px 14px", marginBottom:14, display:"flex", gap:10, alignItems:"center" }}>
@@ -254,27 +329,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
             Change number
           </button>
 
-          <div style={{ marginBottom:16 }}>
-            <label style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, display:"block", marginBottom:8 }}>ENTER OTP</label>
-            <input
-              value={otp}
-              onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))}
-              type="tel"
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="– – – – – –"
-              autoComplete="one-time-code"
-              autoFocus
-              style={{
-                width:"100%", padding:"14px 0", textAlign:"center",
-                border:`2px solid ${otp.length===6?cfg.accent:"#E8ECF5"}`,
-                borderRadius:14, fontSize:24, fontWeight:900, letterSpacing:10,
-                color:C.text, background:"#F8FAFF", outline:"none",
-                fontFamily:"'Nunito',sans-serif", boxSizing:"border-box",
-                transition:"all 0.2s",
-              }}
-            />
-          </div>
+          <OtpBoxes value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))} color={cfg.accent} />
 
           {err && (
             <div style={{ background:C.red+"12", border:`1.5px solid ${C.red}33`, borderRadius:12, padding:"11px 14px", marginBottom:14, display:"flex", gap:10, alignItems:"center" }}>
