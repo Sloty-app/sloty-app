@@ -3,6 +3,7 @@ const Offer = require("../models/Offer");
 const Store = require("../models/Store");
 const User  = require("../models/User");
 const sendNotification = require("../config/notify");
+const { istDateStringToUtcStart, istDateStringToUtcEnd } = require("../utils/date");
 
 // POST /api/offers  (owner) — creates an offer and notifies every
 // customer in the store's city about it. Notification fan-out happens
@@ -17,7 +18,19 @@ exports.createOffer = async (req, res) => {
     if (discountType !== "free" && (!discountValue || discountValue <= 0)) return res.status(400).json({ success:false, message:"Enter a valid discount amount" });
     if (discountType === "percentage" && discountValue > 90) return res.status(400).json({ success:false, message:"Percentage discount can't exceed 90%" });
     if (!validFrom || !validUntil) return res.status(400).json({ success:false, message:"Please set a valid date range" });
-    if (new Date(validUntil) <= new Date(validFrom)) return res.status(400).json({ success:false, message:"End date must be after start date" });
+
+    // validFrom/validUntil arrive as plain "YYYY-MM-DD" from the owner's
+    // date pickers — interpreted as IST calendar days (start-of-day to
+    // end-of-day), not raw UTC midnight, so an offer set to run through
+    // "today" actually stays valid through the end of today in the
+    // owner's own timezone instead of expiring at 5:30am IST. This also
+    // means validFrom===validUntil (a same-day offer) is a real 1-day
+    // window, not an invalid "end before start" — comparing the
+    // converted start/end instants (not the raw date strings) reflects
+    // that correctly below.
+    const validFromDate  = istDateStringToUtcStart(validFrom);
+    const validUntilDate = istDateStringToUtcEnd(validUntil);
+    if (validUntilDate <= validFromDate) return res.status(400).json({ success:false, message:"End date must be on or after the start date" });
 
     const store = await Store.findOne({ owner: req.user.id });
     if (!store) return res.status(404).json({ success:false, message:"You don't have a registered store" });
@@ -33,8 +46,8 @@ exports.createOffer = async (req, res) => {
       minBookingValue: minBookingValue || 0,
       maxDiscountAmount: discountType === "percentage" ? (maxDiscountAmount || null) : null,
       applicableServices: applicableServices || [],
-      validFrom,
-      validUntil,
+      validFrom: validFromDate,
+      validUntil: validUntilDate,
     });
 
     // Notify every customer whose saved city matches this store's city.
@@ -176,23 +189,31 @@ exports.computeOfferDiscount = async (offerId, storeId, services, subtotal) => {
   if (now < offer.validFrom || now > offer.validUntil) return 0;
   if (subtotal < offer.minBookingValue) return 0;
 
-  // If the offer is scoped to specific services, at least one selected
-  // service must match — otherwise the offer doesn't apply here.
+  // If the offer is scoped to specific services, the discount must only
+  // apply to THOSE services' share of the total — not to everything
+  // else bundled into the same booking. Without this, an owner offering
+  // "50% off Haircut" could see a customer combine it with an unrelated
+  // big-ticket service and get 50% off the whole booking instead of
+  // just the Haircut. minBookingValue is still checked against the full
+  // subtotal above (a standard "spend X, save on eligible items"
+  // coupon shape), but the discount itself is computed and capped
+  // against only the eligible portion.
+  let eligibleSubtotal = subtotal;
   if (offer.applicableServices.length > 0) {
-    const selectedNames = services.map(s => s.name);
-    const matches = offer.applicableServices.some(name => selectedNames.includes(name));
-    if (!matches) return 0;
+    const matchingServices = services.filter(s => offer.applicableServices.includes(s.name));
+    if (matchingServices.length === 0) return 0;
+    eligibleSubtotal = matchingServices.reduce((sum, s) => sum + s.price, 0);
   }
 
   let discount = offer.discountType === "free"
-    ? subtotal
+    ? eligibleSubtotal
     : offer.discountType === "flat"
       ? offer.discountValue
-      : Math.round(subtotal * (offer.discountValue / 100));
+      : Math.round(eligibleSubtotal * (offer.discountValue / 100));
 
   if (offer.discountType === "percentage" && offer.maxDiscountAmount) {
     discount = Math.min(discount, offer.maxDiscountAmount);
   }
 
-  return Math.min(discount, subtotal); // never discount more than the subtotal itself
+  return Math.min(discount, eligibleSubtotal); // never discount more than the eligible portion itself
 };

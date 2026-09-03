@@ -2285,19 +2285,28 @@ export default function CustomerApp() {
           const applicableOffer = selectedOffer && storeOffers.find(o => o._id === selectedOffer);
           let offerDiscountPreview = 0;
           if (applicableOffer && totalServicePrice >= (applicableOffer.minBookingValue||0)) {
-            const namesMatch = applicableOffer.applicableServices?.length
-              ? selServices.some(s => applicableOffer.applicableServices.includes(s.name))
-              : true;
-            if (namesMatch) {
+            // Mirrors computeOfferDiscount on the backend — when the
+            // offer is scoped to specific services, the discount only
+            // applies to those services' share of the total, not the
+            // whole combined booking. This is a preview only (the
+            // backend recomputes and enforces the real charge), but it
+            // needs to match what the backend will actually do or the
+            // customer sees one price here and gets charged another.
+            const isRestricted = applicableOffer.applicableServices?.length > 0;
+            const matchingServices = isRestricted
+              ? selServices.filter(s => applicableOffer.applicableServices.includes(s.name))
+              : selServices;
+            const eligibleSubtotal = matchingServices.reduce((sum, s) => sum + s.price, 0);
+            if (matchingServices.length > 0) {
               offerDiscountPreview = applicableOffer.discountType === "free"
-                ? totalServicePrice
+                ? eligibleSubtotal
                 : applicableOffer.discountType === "flat"
                   ? applicableOffer.discountValue
-                  : Math.round(totalServicePrice * (applicableOffer.discountValue/100));
+                  : Math.round(eligibleSubtotal * (applicableOffer.discountValue/100));
               if (applicableOffer.discountType==="percentage" && applicableOffer.maxDiscountAmount) {
                 offerDiscountPreview = Math.min(offerDiscountPreview, applicableOffer.maxDiscountAmount);
               }
-              offerDiscountPreview = Math.min(offerDiscountPreview, totalServicePrice);
+              offerDiscountPreview = Math.min(offerDiscountPreview, eligibleSubtotal);
             }
           }
           const priceAfterOffer = totalServicePrice - offerDiscountPreview;
