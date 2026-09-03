@@ -64,20 +64,35 @@ html, body {
 }
 
 /* At desktop widths the centered column now has real empty space on
-   either side (see --app-width breakpoints above) — a soft brand-tinted
-   backdrop makes that space read as an intentional frame instead of
-   "forgot to make this responsive". This only touches the page
-   background, not .app-shell itself — several elements inside it
-   (BottomNav, bottom sheets) are position:fixed to the actual viewport
-   edge rather than to .app-shell's own box, so giving .app-shell a
-   margin/rounded card treatment here would visually detach them from
-   it. Stays off below 1100px, where the column already fills most of
-   the viewport. */
+   either side (see --app-width breakpoints above). A 7%-opacity tint
+   here previously wasn't enough to read as deliberate — it was
+   practically invisible against the light --bg grey, so the app still
+   looked like it was just floating in blank space. A real brand-dark
+   gradient (the same navy-to-purple treatment already used on the
+   Splash screen and every screen's TopBar) reads unmistakably as a
+   designed "stage" the app sits on, the way a lot of app-preview
+   marketing pages present a centered app frame on a rich backdrop —
+   plus it visually continues every header's own dark gradient instead
+   of clashing against flat grey.
+   This only touches the page background, not .app-shell itself —
+   several elements inside it (BottomNav, bottom sheets) are
+   position:fixed to the actual viewport edge rather than to
+   .app-shell's own box, so a margin/rounded-card treatment on
+   .app-shell here would visually detach them from it. A box-shadow
+   alone (added below) doesn't create that problem — only margin/
+   transform/rounded-corner clipping would — so it's safe to add for
+   the "lifted card" depth without touching those fixed elements.
+   Stays off below 1100px, where the column already fills most of the
+   viewport and a frame would just look cramped. */
 @media (min-width: 1100px) {
   html, body {
     background:
-      radial-gradient(ellipse 900px 700px at 50% 0%, color-mix(in srgb, var(--pri) 7%, transparent), transparent 70%),
-      var(--bg);
+      radial-gradient(ellipse 1100px 800px at 15% 10%, color-mix(in srgb, var(--pri) 35%, transparent), transparent 60%),
+      radial-gradient(ellipse 900px 700px at 90% 85%, color-mix(in srgb, var(--green) 25%, transparent), transparent 60%),
+      linear-gradient(160deg, var(--sec), #2D1B4E);
+  }
+  .app-shell {
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
   }
 }
 

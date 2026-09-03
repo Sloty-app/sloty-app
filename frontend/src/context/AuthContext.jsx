@@ -20,7 +20,19 @@ export function AuthProvider({ children }) {
     checkAuth();
   }, []);
 
-  const login  = (u, token) => { saveToken(token); setUser(u); };
+  const login  = (u, token) => {
+    // Each role app remembers its last-viewed tab in sessionStorage so a
+    // page refresh doesn't dump you back on Home — but that same value
+    // was surviving a fresh login too, so logging in always resumed
+    // wherever the previous session (or previous user, on a shared
+    // device) happened to leave off, instead of starting at Home/
+    // Dashboard/Overview like a real login should.
+    sessionStorage.removeItem("sloty-customer-tab");
+    sessionStorage.removeItem("sloty-owner-tab");
+    sessionStorage.removeItem("sloty-admin-tab");
+    saveToken(token);
+    setUser(u);
+  };
   const logout = ()         => { clearToken(); setUser(null); };
   const refreshUser = async () => {
     try {

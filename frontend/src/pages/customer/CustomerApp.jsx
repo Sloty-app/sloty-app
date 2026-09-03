@@ -1910,6 +1910,7 @@ export default function CustomerApp() {
           {reportSubmitting ? "Submitting..." : <><Send size={15} style={{ marginRight:6, verticalAlign:"middle" }} /> Submit Report</>}
         </Btn>
       </BottomSheet>
+      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />
     </div>
   );
 
