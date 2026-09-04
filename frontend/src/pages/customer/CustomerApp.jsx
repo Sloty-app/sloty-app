@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../api";
 import { C, CATS, getCat, GROUPS, getGroupForCategory, DAY, MON } from "../../constants";
@@ -6,12 +6,17 @@ import { Badge, Card, Btn, Input, TopBar, BottomNav, Loader, Toast, MapPicker, L
 import StoreCard from "../../components/StoreCard";
 import BookingStepper from "../../components/BookingStepper";
 import CategoryIllustration from "../../components/CategoryArt";
-import BookingAssistant from "../../components/BookingAssistant";
-import CustomerChatModal from "../../components/CustomerChatModal";
-import ReferralScreen from "../../components/ReferralScreen";
-import PrivacyPolicy from "../PrivacyPolicy";
-import TermsOfService from "../TermsOfService";
-import StoreMapView from "../../components/StoreMapView";
+// Lazy-loaded — each is a screen/modal most sessions never open (AI
+// assistant, chat, referral, legal pages) or pulls in a large
+// dependency only needed there (StoreMapView uses leaflet) — none of
+// that belongs in the bundle every customer downloads just to see the
+// home screen.
+const BookingAssistant = lazy(() => import("../../components/BookingAssistant"));
+const CustomerChatModal = lazy(() => import("../../components/CustomerChatModal"));
+const ReferralScreen = lazy(() => import("../../components/ReferralScreen"));
+const PrivacyPolicy = lazy(() => import("../PrivacyPolicy"));
+const TermsOfService = lazy(() => import("../TermsOfService"));
+const StoreMapView = lazy(() => import("../../components/StoreMapView"));
 import { getNext7Days, getISTDateString, getISTDay, getISTDateNum, getISTMonthIdx } from "../../utils/date";
 import { getStoreCover, getDirectionsUrl } from "../../utils/storeMedia";
 import { haversineKm, formatDistance } from "../../utils/geo";
@@ -1432,8 +1437,8 @@ export default function CustomerApp() {
     </BottomSheet>
   );
 
-  if (legalOverlay === "terms")   return <TermsOfService onBack={() => setLegalOverlay(null)} />;
-  if (legalOverlay === "privacy") return <PrivacyPolicy onBack={() => setLegalOverlay(null)} />;
+  if (legalOverlay === "terms")   return <Suspense fallback={<Loader text="Loading..." />}><TermsOfService onBack={() => setLegalOverlay(null)} /></Suspense>;
+  if (legalOverlay === "privacy") return <Suspense fallback={<Loader text="Loading..." />}><PrivacyPolicy onBack={() => setLegalOverlay(null)} /></Suspense>;
 
   if (showSettings) return (
     <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:40 }}>
@@ -1718,7 +1723,16 @@ export default function CustomerApp() {
           </button>
         </div>
       </div>
-      <BookingAssistant open={showAssistant} onClose={() => setShowAssistant(false)} />
+      {/* fallback={null} — this is mounted unconditionally (so its chat
+          history survives closing/reopening within the session, same as
+          before lazy-loading), so a visible fallback would flash on
+          every single home-screen load whether or not the assistant is
+          ever opened. Nothing to show beats a stray spinner nobody asked
+          for; if the chunk is still loading at the exact moment someone
+          taps the launcher, they see nothing for a beat, not broken UI. */}
+      <Suspense fallback={null}>
+        <BookingAssistant open={showAssistant} onClose={() => setShowAssistant(false)} />
+      </Suspense>
 
       <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />
     </div>
@@ -1773,11 +1787,13 @@ export default function CustomerApp() {
       </div>
       <div style={{ padding:"0 16px 16px" }}>
         {viewMode==="map" ? (
-          <StoreMapView
-            stores={sortedStores}
-            userLocation={myLocation}
-            onSelectStore={(s) => { setSelStore(s); setScreen("detail"); }}
-          />
+          <Suspense fallback={<Loader text="Loading map..." />}>
+            <StoreMapView
+              stores={sortedStores}
+              userLocation={myLocation}
+              onSelectStore={(s) => { setSelStore(s); setScreen("detail"); }}
+            />
+          </Suspense>
         ) : loading ? <Loader skeleton /> : filtStores.length===0 ? (
           <div style={{ textAlign:"center", padding:"40px 20px" }}>
             <div style={{ width:56, height:56, borderRadius:18, background:C.pri+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 12px" }}><Search size={24} color={C.pri} /></div>
@@ -2019,7 +2035,12 @@ export default function CustomerApp() {
             <MessageCircle size={13} /> Message
           </button>
           </div>
-        <CustomerChatModal open={showChat} onClose={() => setShowChat(false)} store={selStore} />
+        {/* fallback={null} — same reasoning as BookingAssistant above:
+            unconditionally mounted, so a visible fallback would flash on
+            every store-detail visit regardless of whether chat is ever opened. */}
+        <Suspense fallback={null}>
+          <CustomerChatModal open={showChat} onClose={() => setShowChat(false)} store={selStore} />
+        </Suspense>
         </Card>
 
         {/* Active offers */}
@@ -2724,7 +2745,7 @@ export default function CustomerApp() {
               <p style={{ fontSize:13, color:"rgba(255,255,255,0.75)", marginTop:4 }}>Invite friends, earn ₹50 each</p>
             </div>
             <div style={{ padding:"16px" }}>
-              <ReferralScreen />
+              <Suspense fallback={<Loader text="Loading..." />}><ReferralScreen /></Suspense>
             </div>
           </div>
         </div>

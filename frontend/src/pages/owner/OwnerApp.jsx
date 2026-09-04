@@ -1,13 +1,18 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../api";
 import { C, CATS, getCat } from "../../constants";
 import { Badge, Card, Btn, Input, Select, Loader, MapPicker, LocationDetector, BottomSheet } from "../../components/UI";
-import OwnerOffers from "../../components/OwnerOffers";
-import OwnerMessages from "../../components/OwnerMessages";
-import OwnerAnalytics from "../../components/OwnerAnalytics";
-import OwnerBlockedDates from "../../components/OwnerBlockedDates";
-import OwnerBreakTimes from "../../components/OwnerBreakTimes";
+// Lazy-loaded — each ships as its own chunk instead of bloating the
+// single OwnerApp bundle every owner downloads on login regardless of
+// which tabs they actually visit. OwnerAnalytics alone pulls in
+// recharts, a genuinely large dependency that has no business being in
+// the initial bundle for an owner who only ever checks the Queue tab.
+const OwnerOffers       = lazy(() => import("../../components/OwnerOffers"));
+const OwnerMessages     = lazy(() => import("../../components/OwnerMessages"));
+const OwnerAnalytics    = lazy(() => import("../../components/OwnerAnalytics"));
+const OwnerBlockedDates = lazy(() => import("../../components/OwnerBlockedDates"));
+const OwnerBreakTimes   = lazy(() => import("../../components/OwnerBreakTimes"));
 import { getISTDateString, getISTNow, getNext7Days } from "../../utils/date";
 import { getSocket, joinRoom, leaveRoom } from "../../utils/socket";
 import { playChime } from "../../utils/sound";
@@ -1677,10 +1682,10 @@ export default function OwnerApp() {
         )}
 
         {/* ── Offers ── */}
-        {tab==="offers" && <OwnerOffers services={myStore?.services} />}
+        {tab==="offers" && <Suspense fallback={<Loader text="Loading offers..." />}><OwnerOffers services={myStore?.services} /></Suspense>}
 
         {/* ── Messages ── */}
-        {tab==="messages" && <OwnerMessages activeId={activeConversationId} setActiveId={setActiveConversationId} />}
+        {tab==="messages" && <Suspense fallback={<Loader text="Loading messages..." />}><OwnerMessages activeId={activeConversationId} setActiveId={setActiveConversationId} /></Suspense>}
 
         {/* ── History ── */}
         {tab==="history" && (
@@ -1770,7 +1775,7 @@ export default function OwnerApp() {
           </div>
         )}
 
-        {tab==="analytics" && <OwnerAnalytics />}
+        {tab==="analytics" && <Suspense fallback={<Loader text="Loading analytics..." />}><OwnerAnalytics /></Suspense>}
 
         {tab==="payouts" && (
           <div style={{ padding:20 }}>
@@ -1915,8 +1920,10 @@ export default function OwnerApp() {
       </BottomSheet>
 
       <BottomSheet open={showManageSlots} onClose={() => { setShowManageSlots(false); fetchGridSlots(gridDate); }} title="Manage Slots">
-        <OwnerBlockedDates />
-        <OwnerBreakTimes />
+        <Suspense fallback={<Loader text="Loading..." />}>
+          <OwnerBlockedDates />
+          <OwnerBreakTimes />
+        </Suspense>
       </BottomSheet>
 
       <BottomSheet open={!!addServiceBooking} onClose={() => setAddServiceBooking(null)} title={addServiceBooking ? `Add Service — ${addServiceBooking.customerName}` : "Add Service"}>
