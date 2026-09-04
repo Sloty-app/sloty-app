@@ -1680,29 +1680,38 @@ export default function CustomerApp() {
         </div>
       </div>
 
-      {/* Floating AI booking assistant launcher. The app's visual
-          container is a fixed 440px column centered on screen (via
-          left:50% + translateX elsewhere in this file) — so this
-          button uses the SAME convention: left:50% + a translateX
-          computed to land it 16px from the container's right edge
-          (220 half-width - 16 margin - 54 button width = 150), which
-          stays correct regardless of actual browser/viewport width,
-          unlike a `right:` offset which is relative to the full
-          viewport and breaks on desktop. bottom:96 clears BottomNav
-          (~90px tall) with a clean 16px extra gap above it. */}
-      <button
-        onClick={() => setShowAssistant(true)}
-        style={{
-          position:"fixed", bottom:96, left:"50%", transform:"translateX(150px)",
-          width:54, height:54, borderRadius:"50%",
-          background:`linear-gradient(100deg,${C.pri},#DB2777)`,
-          border:"none", boxShadow:`0 8px 24px ${C.pri}55`,
-          display:"flex", alignItems:"center", justifyContent:"center",
-          cursor:"pointer", zIndex:90, transition:"transform 0.15s ease",
-        }}
-      >
-        <Sparkles size={22} color="#fff" />
-      </button>
+      {/* Floating AI booking assistant launcher. `position:fixed`
+          positions relative to the real browser viewport, not the
+          centered app column — a hardcoded left:50% + translateX(Npx)
+          here only ever lined up with the column's right edge at one
+          exact viewport width, and drifted further off the more the
+          real viewport differed from that (badly so once --app-width
+          became responsive — see index.css — since the button no
+          longer even shared the app column's actual width). Fixed by
+          making the OUTER layer span the true viewport and center an
+          inner layer that's exactly var(--app-width) wide (clamped to
+          the viewport itself when narrower) — the button then just
+          sits 16px from THAT layer's own right edge, which is always
+          the app column's real edge at any width. The outer layer is
+          pointer-events:none so it doesn't block taps outside the
+          button; the button re-enables its own pointer-events. */}
+      <div style={{ position:"fixed", left:0, right:0, bottom:96, display:"flex", justifyContent:"center", pointerEvents:"none", zIndex:90 }}>
+        <div style={{ width:"var(--app-width)", maxWidth:"100%", position:"relative" }}>
+          <button
+            onClick={() => setShowAssistant(true)}
+            style={{
+              position:"absolute", right:16, bottom:0, pointerEvents:"auto",
+              width:54, height:54, borderRadius:"50%",
+              background:`linear-gradient(100deg,${C.pri},#DB2777)`,
+              border:"none", boxShadow:`0 8px 24px ${C.pri}55`,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              cursor:"pointer", transition:"transform 0.15s ease",
+            }}
+          >
+            <Sparkles size={22} color="#fff" />
+          </button>
+        </div>
+      </div>
       <BookingAssistant open={showAssistant} onClose={() => setShowAssistant(false)} />
 
       <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />
