@@ -387,7 +387,9 @@ export default function AdminApp() {
   const [allStores, setAllStores] = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [tickets,      setTickets]      = useState([]);
+  const [ticketsLoading, setTicketsLoading] = useState(true);
   const [ticketFilter, setTicketFilter] = useState("open");
+  const [settlementsLoading, setSettlementsLoading] = useState(true);
   const [customersData,    setCustomersData]    = useState(null); // { totals, customers }
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customerSearch,   setCustomerSearch]   = useState("");
@@ -407,11 +409,13 @@ export default function AdminApp() {
   };
 
   const fetchTickets = async (status) => {
+    setTicketsLoading(true);
     try {
       const q = status ? `?status=${status}` : "";
       const res = await api("GET", `/support/admin/all${q}`);
       setTickets(res.tickets||[]);
     } catch(e) { console.error(e); }
+    finally { setTicketsLoading(false); }
   };
 
   const updateTicket = async (id, status) => {
@@ -424,6 +428,11 @@ export default function AdminApp() {
       const res = await api("GET", "/settlements/pending");
       setPendingSettlements(res.settlements || []);
     } catch(e) { console.error(e); }
+    // Only meaningfully gates the FIRST load (see settlementsLoading
+    // below) — this also gets called quietly on mount for the tab count
+    // badge and after completing a settlement, neither of which should
+    // flash a skeleton over an already-visible list.
+    finally { setSettlementsLoading(false); }
   };
 
   const completeSettlement = async (id) => {
@@ -890,7 +899,7 @@ export default function AdminApp() {
                   <span style={{ fontSize:12, color:"rgba(255,255,255,0.3)" }}>{pendingSettlements.length} request{pendingSettlements.length!==1?"s":""}</span>
                 </div>
 
-                {pendingSettlements.length===0 ? (
+                {settlementsLoading ? <Loader text="Loading settlements..." /> : pendingSettlements.length===0 ? (
                   <div style={{ textAlign:"center", padding:"60px 20px" }}>
                     <div style={{ width:64, height:64, borderRadius:22, background:C.green+"22", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
                       <CheckCircle size={28} color={C.green} />
@@ -946,7 +955,7 @@ export default function AdminApp() {
                   ))}
                 </div>
 
-                {tickets.length===0 ? (
+                {ticketsLoading ? <Loader text="Loading tickets..." /> : tickets.length===0 ? (
                   <div style={{ textAlign:"center", padding:"60px 20px" }}>
                     <div style={{ width:64, height:64, borderRadius:22, background:C.green+"22", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
                       <CheckCircle size={28} color={C.green} />

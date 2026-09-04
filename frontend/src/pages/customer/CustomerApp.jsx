@@ -435,6 +435,7 @@ export default function CustomerApp() {
   const [screen,        setScreen]       = useState("home");
   const [stores,        setStores]       = useState([]);
   const [myBookings,    setMyBookings]   = useState([]);
+  const [bookingsLoading, setBookingsLoading] = useState(true); // true until the first /bookings/my fetch resolves
   const [selCat,        setSelCat]       = useState(null);
   const [selGroup,      setSelGroup]     = useState(null); // active home-screen group ("health"/"mechanic"/"beauty"), or null
   const [selStore,      setSelStore]     = useState(null);
@@ -937,6 +938,11 @@ export default function CustomerApp() {
   const fetchMyBookings = async () => {
     try { const res = await api("GET", "/bookings/my"); setMyBookings(res.bookings||[]); }
     catch(e) { console.error("fetchMyBookings failed:", e.message); }
+    // Only matters for the very first fetch (see bookingsLoading below) —
+    // it's already false after that, so this is a no-op on every later
+    // refetch (after booking/cancel/reschedule etc.), which is exactly
+    // what keeps those from flashing a skeleton over an already-loaded list.
+    finally { setBookingsLoading(false); }
   };
 
   const fetchSlots = async (storeId, date, duration=30, staffId=null) => {
@@ -2480,9 +2486,9 @@ export default function CustomerApp() {
       {ReviewSheet}
       {CancelSheet}
       {RescheduleSheet}
-      <TopBar title="My Bookings" sub={`${myBookings.length} bookings`} onBack={() => setTab("home")} />
+      <TopBar title="My Bookings" sub={bookingsLoading ? "Loading..." : `${myBookings.length} bookings`} onBack={() => setTab("home")} />
       <div style={{ padding:16 }}>
-        {myBookings.length===0 ? (
+        {bookingsLoading ? <Loader skeleton /> : myBookings.length===0 ? (
           <div style={{ textAlign:"center", padding:"60px 20px" }}>
             <div style={{ width:72, height:72, borderRadius:24, background:C.pri+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
               <ClipboardList size={32} color={C.pri} />
