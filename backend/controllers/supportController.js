@@ -43,7 +43,11 @@ exports.getAllTickets = async (req, res) => {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
-    const tickets = await SupportTicket.find(filter).sort({ createdAt:-1 });
+    // .limit(200) is a safety cap, not real pagination — every ticket
+    // ever filed, unbounded, would otherwise load in full on every
+    // single visit to the admin support inbox, growing forever as
+    // tickets accumulate over the app's lifetime.
+    const tickets = await SupportTicket.find(filter).sort({ createdAt:-1 }).limit(200).lean();
     res.status(200).json({ success:true, count:tickets.length, tickets });
   } catch (err) {
     console.error("GET ALL TICKETS ERROR:", err);

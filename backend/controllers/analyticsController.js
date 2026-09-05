@@ -9,6 +9,24 @@ const Booking = require("../models/Booking");
 const User = require("../models/User");
 const mongoose = require("mongoose");
 
+// A booking's real, realized revenue as a Mongo aggregation expression
+// — original price plus any add-on services, but only counting add-ons
+// actually marked paid (an unpaid add-on hasn't come in yet, so
+// shouldn't inflate reported revenue ahead of when the store genuinely
+// collects it). Same rule the JS version used to apply per-document
+// after loading everything into Node; expressed once here so every
+// $group below can $sum it directly inside the database.
+const bookingRevenueExpr = {
+  $add: [
+    { $ifNull: ["$service.price", 0] },
+    { $cond: [
+        { $eq: ["$addedServicesPaymentStatus", "paid"] },
+        { $sum: { $map: { input: { $ifNull: ["$addedServices", []] }, as: "x", in: { $ifNull: ["$$x.price", 0] } } } },
+        0,
+    ]},
+  ],
+};
+
 // GET /api/analytics/dashboard?days=30
 exports.getDashboardAnalytics = async (req, res) => {
   try {
@@ -19,113 +37,134 @@ exports.getDashboardAnalytics = async (req, res) => {
     const since = new Date();
     since.setDate(since.getDate() - days);
 
-    const bookings = await Booking.find({
-      store: store._id,
-      createdAt: { $gte: since },
-    }).select("customer service staffName timeSlot status paymentMode createdAt date addedServices addedServicesPaymentStatus");
+    // Everything below used to start with Booking.find(...) loading
+    // every matching document into Node, then computing all six chart
+    // views (revenue-by-day, revenue-by-service, no-show-by-day,
+    // peak-hours, staff performance) via repeated .filter()/.reduce()
+    // passes over that same in-memory array — cost scaling with a
+    // store's real booking volume in the window, re-run on every single
+    // Analytics tab view. Replaced with one $facet aggregation that
+    // computes each view's grouped totals in the database; only the
+    // (small, bounded-by-days-or-distinct-groups) grouped results ever
+    // reach this process.
+    const [agg] = await Booking.aggregate([
+      { $match: { store: store._id, createdAt: { $gte: since } } },
+      { $facet: {
+          revenueByDay: [
+            { $match: { status: "completed" } },
+            { $group: {
+                _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                revenue: { $sum: bookingRevenueExpr },
+            } },
+          ],
+          // Add-ons are counted under their OWN name, not folded into
+          // whatever was originally booked — a beard trim added onto a
+          // haircut visit should show up as beard-trim revenue, not
+          // haircut revenue. $concatArrays builds one entry for the
+          // primary service plus one per paid add-on, then $unwind
+          // fans them out so $group can sum by name across both.
+          revenueByService: [
+            { $match: { status: "completed" } },
+            { $addFields: { _contrib: {
+                $concatArrays: [
+                  [{ name: { $ifNull: ["$service.name", "Unknown"] }, revenue: { $ifNull: ["$service.price", 0] } }],
+                  { $cond: [
+                      { $eq: ["$addedServicesPaymentStatus", "paid"] },
+                      { $map: { input: { $ifNull: ["$addedServices", []] }, as: "x", in: { name: "$$x.name", revenue: { $ifNull: ["$$x.price", 0] } } } },
+                      [],
+                  ]},
+                ],
+            } } },
+            { $unwind: "$_contrib" },
+            { $group: { _id: "$_contrib.name", revenue: { $sum: "$_contrib.revenue" } } },
+            { $sort: { revenue: -1 } },
+            { $limit: 8 }, // top 8 — a full long-tail list isn't actionable
+          ],
+          dayCounts: [
+            { $group: {
+                _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                total: { $sum: 1 },
+                noShow: { $sum: { $cond: [{ $eq: ["$status", "no_show"] }, 1, 0] } },
+            } },
+          ],
+          // Hour prefix parsed the same way the old regex did (the
+          // digits before the ":", no AM/PM adjustment) — same behavior
+          // as before, just evaluated in the database. onError/onNull
+          // fall back to hour 0 instead of failing the whole query if
+          // any historical row ever has a malformed timeSlot.
+          peakHours: [
+            { $group: {
+                _id: { $convert: {
+                  input: { $arrayElemAt: [{ $split: [{ $ifNull: ["$timeSlot", "0:00"] }, ":"] }, 0] },
+                  to: "int", onError: 0, onNull: 0,
+                } },
+                count: { $sum: 1 },
+            } },
+          ],
+          staffPerformance: [
+            { $match: { status: "completed", staffName: { $nin: [null, ""] } } },
+            { $group: { _id: "$staffName", bookings: { $sum: 1 }, revenue: { $sum: bookingRevenueExpr } } },
+            { $sort: { revenue: -1 } },
+          ],
+      } },
+    ]);
 
-    // A booking's real, realized revenue — original price plus any
-    // add-on services, but only counting add-ons that were actually
-    // marked paid. An unpaid add-on hasn't actually come in yet, so it
-    // shouldn't inflate reported revenue ahead of when the store
-    // genuinely collects it.
-    const bookingRevenue = (b) => {
-      const base = b.service?.price || 0;
-      const addOns = b.addedServicesPaymentStatus === "paid"
-        ? (b.addedServices || []).reduce((sum, s) => sum + (s.price || 0), 0)
-        : 0;
-      return base + addOns;
-    };
-
-    // ── Revenue trend (completed bookings only — reflects money that
-    //    actually came in, not pending/cancelled ones) ──────────────────
+    // Dense zero-filled day templates — cheap (O(days), max 90), then
+    // overlaid with whatever the aggregation actually found. Mongo only
+    // returns days with at least one booking, so this fills the gaps
+    // exactly like the old pre-seeded object did.
     const revenueByDay = {};
-    for (let i = 0; i < days; i++) {
-      const d = new Date(since);
-      d.setDate(d.getDate() + i);
-      revenueByDay[d.toISOString().slice(0,10)] = 0;
+    const noShowByDay  = {};
+    // Pre-existing bug, found while verifying this rewrite against real
+    // data rather than just reading the code: counting forward from
+    // `since` (exactly `days` days before the current instant) produces
+    // `days` calendar-day keys ending YESTERDAY, not today — e.g. with
+    // days=7 at 2026-09-05, this generated 08-29..09-04 and silently had
+    // no slot for 09-05 at all, so today's activity could never appear
+    // on the chart no matter how much came in, not even as a zero. Fixed
+    // by counting backward from now instead, which always lands the
+    // last entry on today's own calendar date.
+    const now = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      revenueByDay[key] = 0;
+      noShowByDay[key]  = { total: 0, noShow: 0 };
     }
-    bookings.filter(b => b.status === "completed").forEach(b => {
-      const key = new Date(b.createdAt).toISOString().slice(0,10);
-      if (revenueByDay[key] !== undefined) revenueByDay[key] += bookingRevenue(b);
-    });
+    agg.revenueByDay.forEach(r => { if (revenueByDay[r._id] !== undefined) revenueByDay[r._id] = r.revenue; });
+    agg.dayCounts.forEach(r => { if (noShowByDay[r._id]) noShowByDay[r._id] = { total: r.total, noShow: r.noShow }; });
+
     const revenueTrend = Object.entries(revenueByDay).map(([date, revenue]) => ({ date, revenue }));
+    const revenueByService = agg.revenueByService.map(r => ({ name: r._id, revenue: r.revenue }));
+    const noShowTrend = Object.entries(noShowByDay).map(([date, v]) => ({
+      date,
+      rate: v.total > 0 ? Math.round((v.noShow / v.total) * 100) : 0,
+    }));
+    const peakHours = agg.peakHours
+      .map(r => ({ hour: r._id, count: r.count }))
+      .filter(h => h.count > 0)
+      .sort((a, b) => a.hour - b.hour);
+    const staffPerformance = agg.staffPerformance.map(r => ({ name: r._id, bookings: r.bookings, revenue: r.revenue }));
 
-    // ── Revenue by service ───────────────────────────────────────────────
-    const serviceRevenue = {};
-    bookings.filter(b => b.status === "completed").forEach(b => {
-      const name = b.service?.name || "Unknown";
-      serviceRevenue[name] = (serviceRevenue[name] || 0) + (b.service?.price || 0);
-      // Add-ons counted under their OWN name, not folded into whatever
-      // was originally booked — a beard trim added onto a haircut visit
-      // should show up as beard-trim revenue, not haircut revenue.
-      if (b.addedServicesPaymentStatus === "paid") {
-        (b.addedServices || []).forEach(s => {
-          serviceRevenue[s.name] = (serviceRevenue[s.name] || 0) + (s.price || 0);
-        });
-      }
-    });
-    const revenueByService = Object.entries(serviceRevenue)
-      .map(([name, revenue]) => ({ name, revenue }))
-      .sort((a,b) => b.revenue - a.revenue)
-      .slice(0, 8); // top 8 — a full long-tail list isn't actionable
-
-    // ── New vs returning customers ───────────────────────────────────────
-    // "New" = this is the customer's first-ever booking at this store
-    // (not just first in the selected window) — requires checking each
-    // customer's full history, not just bookings within `days`.
-    const customerIds = [...new Set(bookings.map(b => b.customer?.toString()).filter(Boolean))];
+    // New vs returning: "new" means this is the customer's first-ever
+    // booking at this store (not just first in the selected window) —
+    // needs each customer's full history, not just bookings in `days`.
+    // .distinct() pulls only the customer ids that appear in-window
+    // (bounded by that count, not by total bookings), rather than
+    // extracting them from a full document array we no longer fetch.
+    const customerIds = await Booking.distinct("customer", { store: store._id, createdAt: { $gte: since } });
     const firstBookingDates = await Booking.aggregate([
-      { $match: { store: store._id, customer: { $in: customerIds.map(id => new mongoose.Types.ObjectId(id)) } } },
+      { $match: { store: store._id, customer: { $in: customerIds } } },
       { $group: { _id: "$customer", firstBooking: { $min: "$createdAt" } } },
     ]);
     const firstBookingMap = new Map(firstBookingDates.map(f => [f._id.toString(), f.firstBooking]));
     let newCustomers = 0, returningCustomers = 0;
     customerIds.forEach(id => {
-      const first = firstBookingMap.get(id);
+      const first = firstBookingMap.get(id.toString());
       if (first && new Date(first) >= since) newCustomers++;
       else returningCustomers++;
     });
-
-    // ── No-show trend ─────────────────────────────────────────────────────
-    const noShowByDay = {};
-    for (let i = 0; i < days; i++) {
-      const d = new Date(since);
-      d.setDate(d.getDate() + i);
-      noShowByDay[d.toISOString().slice(0,10)] = { total: 0, noShow: 0 };
-    }
-    bookings.forEach(b => {
-      const key = new Date(b.createdAt).toISOString().slice(0,10);
-      if (!noShowByDay[key]) return;
-      noShowByDay[key].total += 1;
-      if (b.status === "no_show") noShowByDay[key].noShow += 1;
-    });
-    const noShowTrend = Object.entries(noShowByDay).map(([date, v]) => ({
-      date,
-      rate: v.total > 0 ? Math.round((v.noShow / v.total) * 100) : 0,
-    }));
-
-    // ── Peak hours — bookings grouped by hour-of-day, across the window ──
-    const hourCounts = Array(24).fill(0);
-    bookings.forEach(b => {
-      const hourMatch = (b.timeSlot || "").match(/^(\d{1,2}):/);
-      if (hourMatch) hourCounts[Number(hourMatch[1])] += 1;
-    });
-    const peakHours = hourCounts.map((count, hour) => ({ hour, count })).filter(h => h.count > 0);
-
-    // ── Staff performance (only meaningful for multi-staff stores) ──────
-    let staffPerformance = [];
-    if (store.hasStaff) {
-      const staffStats = {};
-      bookings.filter(b => b.status === "completed" && b.staffName).forEach(b => {
-        if (!staffStats[b.staffName]) staffStats[b.staffName] = { bookings: 0, revenue: 0 };
-        staffStats[b.staffName].bookings += 1;
-        staffStats[b.staffName].revenue += bookingRevenue(b);
-      });
-      staffPerformance = Object.entries(staffStats)
-        .map(([name, stats]) => ({ name, ...stats }))
-        .sort((a,b) => b.revenue - a.revenue);
-    }
 
     res.status(200).json({
       success: true,
@@ -274,24 +313,51 @@ exports.getCustomerDetail = async (req, res) => {
     const customer = await User.findOne({ _id: req.params.id, role: "customer" });
     if (!customer) return res.status(404).json({ success:false, message:"Customer not found" });
 
-    const bookings = await Booking.find({ customer: req.params.id })
-      .populate("store", "name category city area")
-      .sort({ createdAt: -1 });
+    // The response only ever displayed the 30 most recent bookings
+    // anyway (see the .slice(0,30) this replaces) — but stats and
+    // favorite-store were computed by loading the customer's ENTIRE
+    // booking history first. For a long-standing regular that's every
+    // visit they've ever made, just to then throw away everything past
+    // #30. Stats are now a single aggregation (bounded by status/store
+    // group count, not by history length); only the 30 rows actually
+    // shown are ever fetched as full documents.
+    const [agg] = await Booking.aggregate([
+      { $match: { customer: customer._id } },
+      { $facet: {
+          statusCounts: [
+            { $group: { _id: "$status", n: { $sum: 1 } } },
+          ],
+          revenue: [
+            { $match: { status: "completed" } },
+            { $group: { _id: null, totalSpent: { $sum: { $ifNull: ["$service.price", 0] } }, completedCount: { $sum: 1 } } },
+          ],
+          // Favorite store = the store this customer has booked most
+          // often (any status, matching the original's own count-all
+          // rule) — grouped and topped-out in the database instead of
+          // building a per-store tally by hand over every booking.
+          favoriteStore: [
+            { $match: { store: { $ne: null } } },
+            { $group: { _id: "$store", count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 1 },
+            { $lookup: { from: Store.collection.name, localField: "_id", foreignField: "_id", as: "storeDoc" } },
+            { $project: { count: 1, name: { $arrayElemAt: ["$storeDoc.name", 0] } } },
+          ],
+          totalCount: [{ $count: "n" }],
+      } },
+    ]);
 
-    const completed = bookings.filter(b => b.status === "completed");
-    const cancelled = bookings.filter(b => b.status === "cancelled");
-    const noShow    = bookings.filter(b => b.status === "no_show");
-    const totalSpent = completed.reduce((sum, b) => sum + (b.service?.price || 0), 0);
+    const statusCount = (name) => agg.statusCounts.find(s => s._id === name)?.n || 0;
+    const totalSpent = agg.revenue[0]?.totalSpent || 0;
+    const completedCount = agg.revenue[0]?.completedCount || 0;
+    const fav = agg.favoriteStore[0];
 
-    // Favorite store = the store this customer has booked most often.
-    const storeCounts = {};
-    bookings.forEach(b => {
-      if (!b.store) return;
-      const key = b.store._id.toString();
-      if (!storeCounts[key]) storeCounts[key] = { name: b.store.name, count: 0 };
-      storeCounts[key].count++;
-    });
-    const favoriteStore = Object.values(storeCounts).sort((a, b) => b.count - a.count)[0] || null;
+    const recentBookings = await Booking.find({ customer: req.params.id })
+      .select("store service date timeSlot status")
+      .populate("store", "name")
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .lean();
 
     res.status(200).json({
       success: true,
@@ -303,12 +369,15 @@ exports.getCustomerDetail = async (req, res) => {
         bookingRestrictedUntil: customer.bookingRestrictedUntil,
       },
       stats: {
-        totalBookings: bookings.length, completed: completed.length,
-        cancelled: cancelled.length, noShow: noShow.length, totalSpent,
-        avgBookingValue: completed.length ? Math.round(totalSpent / completed.length) : 0,
-        favoriteStore,
+        totalBookings: agg.totalCount[0]?.n || 0,
+        completed: completedCount,
+        cancelled: statusCount("cancelled"),
+        noShow: statusCount("no_show"),
+        totalSpent,
+        avgBookingValue: completedCount ? Math.round(totalSpent / completedCount) : 0,
+        favoriteStore: fav ? { name: fav.name || "Unknown", count: fav.count } : null,
       },
-      bookings: bookings.slice(0, 30).map(b => ({
+      bookings: recentBookings.map(b => ({
         _id: b._id, storeName: b.store?.name || "Unknown", service: b.service?.name,
         price: b.service?.price, date: b.date, timeSlot: b.timeSlot, status: b.status,
       })),
