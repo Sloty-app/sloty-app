@@ -17,6 +17,7 @@ const ReferralScreen = lazy(() => import("../../components/ReferralScreen"));
 const PrivacyPolicy = lazy(() => import("../PrivacyPolicy"));
 const TermsOfService = lazy(() => import("../TermsOfService"));
 const StoreMapView = lazy(() => import("../../components/StoreMapView"));
+import { OffersCarousel, StoreRail, useRotatingPlaceholder, AnimatedNumber, RatingPill } from "../../components/HomeSections";
 import { getNext7Days, getISTDateString, getISTDay, getISTDateNum, getISTMonthIdx } from "../../utils/date";
 import { getStoreCover, getDirectionsUrl } from "../../utils/storeMedia";
 import { haversineKm, formatDistance } from "../../utils/geo";
@@ -31,8 +32,14 @@ import {
   IndianRupee, Circle, Shield, ArrowLeft, Ticket, Star,
   Users, Heart, RotateCcw, Bell, Wallet,
   ChevronUp, Mail, MessageCircle, FileText, Send, Navigation, Edit2, Trash2, Info, Link2, MapPinned,
-  Map as MapIconLucide, List as ListIcon, ArrowUpDown, Share2, Sparkles, Image as ImageIcon, ChevronLeft, Tag, Percent, Gift
+  Map as MapIconLucide, List as ListIcon, ArrowUpDown, Share2, Sparkles, Image as ImageIcon, ChevronLeft, Tag, Percent, Gift,
+  TrendingUp, Flame, History as HistoryIcon
 } from "lucide-react";
+
+const SEARCH_PROMPTS = ["haircut", "dentist", "bike service", "car wash", "beauty parlour", "eye check-up", "mobile repair", "blood test"];
+const TRENDING_SEARCHES = ["Haircut", "Dentist", "Bike Service", "Beauty Parlour", "Car Service"];
+const RECENT_KEY = "sloty-recent-searches";
+const loadRecents = () => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; } };
 
 const InfoRow = ({ icon: Icon, text }) => text ? (
   <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:5 }}>
@@ -463,6 +470,22 @@ export default function CustomerApp() {
   const [loading,       setLoading]      = useState(false);
   const [search,        setSearch]       = useState("");
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [recentSearches, setRecentSearches] = useState(loadRecents);
+  const [detailTab, setDetailTab] = useState("services"); // store detail: "services" | "reviews" | "info"
+  const searchPrompt = useRotatingPlaceholder(SEARCH_PROMPTS);
+  // Commits a search: remembers it (max 6, most recent first), then
+  // jumps to the results screen. Used by Enter, suggestions, recents
+  // and trending chips so they all behave identically.
+  const commitSearch = (term) => {
+    const t = (term || "").trim();
+    if (!t) return;
+    setSearch(t); setSelCat(null); setSelGroup(null); setScreen("stores"); fetchStores(); setShowSearchSuggestions(false);
+    setRecentSearches(prev => {
+      const next = [t, ...prev.filter(r => r.toLowerCase() !== t.toLowerCase())].slice(0, 6);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
   const [filter,        setFilter]       = useState("All");
   const [viewMode,      setViewMode]     = useState("list"); // "list" | "map"
   const [sortNearest,   setSortNearest]  = useState(false);
@@ -587,7 +610,7 @@ export default function CustomerApp() {
   // of a fresh inline arrow function at each of the three render sites,
   // so memoized cards don't re-render just because this prop identity
   // changed on every parent render.
-  const handleSelectStore = useCallback((s) => { setSelStore(s); setScreen("detail"); }, []);
+  const handleSelectStore = useCallback((s) => { setSelStore(s); setDetailTab("services"); setScreen("detail"); }, []);
 
   const openBooking = useCallback((store) => {
     setSelStore(store);
@@ -1558,9 +1581,9 @@ export default function CustomerApp() {
 
   // ── Home ──────────────────────────────────────────────────────────────────
   if (screen==="home" && tab==="home") return (
-    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
+    <div key="home" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
       {ToastEl}
-      <div style={{ background:`linear-gradient(135deg,${C.pri} 0%,#C0304A 100%)`, padding:"48px 20px 20px", borderBottomLeftRadius:36, borderBottomRightRadius:36 }}>
+      <div style={{ background:`linear-gradient(135deg,${C.pri} 0%,${C.priDark} 100%)`, padding:"48px 20px 20px", borderBottomLeftRadius:36, borderBottomRightRadius:36 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div>
             <button onClick={() => setShowLocPicker(true)} style={{ background:"rgba(255,255,255,0.18)", border:"none", borderRadius:20, padding:"5px 14px", color:"rgba(255,255,255,0.9)", fontSize:12, cursor:"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
@@ -1576,19 +1599,58 @@ export default function CustomerApp() {
           </div>
         </div>
         <div style={{ position:"relative" }}>
-          <div style={{ background:C.card, borderRadius:16, padding:"13px 18px", display:"flex", gap:14, alignItems:"center", boxShadow:"0 8px 32px rgba(0,0,0,0.15)" }}>
+          <div style={{ background:C.card, borderRadius:16, padding:"13px 18px", display:"flex", gap:14, alignItems:"center", boxShadow:"0 8px 32px rgba(0,0,0,0.15)", position:"relative" }}>
             <Search size={18} color={C.muted} />
-            <input
-              value={search}
-              onChange={e=>setSearch(e.target.value)}
-              onFocus={()=>setShowSearchSuggestions(true)}
-              onBlur={()=>setTimeout(()=>setShowSearchSuggestions(false), 150)}
-              onKeyDown={e=>{ if(e.key==="Enter" && search.trim()){ setSelCat(null); setScreen("stores"); fetchStores(); setShowSearchSuggestions(false); } }}
-              placeholder={`Search salons, mechanics in ${userCity||"your city"}...`}
-              style={{ flex:1, border:"none", fontSize:14, color:C.text, outline:"none", background:"transparent", fontFamily:"'Nunito',sans-serif" }}
-            />
+            <div style={{ flex:1, position:"relative", minWidth:0 }}>
+              {/* Rotating placeholder — a real placeholder attribute can't
+                  animate, so this is an overlay that swaps every few seconds
+                  and only shows while the field is empty. */}
+              {!search && (
+                <span key={searchPrompt.key} className="placeholder-in" style={{ position:"absolute", left:0, top:"50%", transform:"translateY(-50%)", fontSize:14, color:C.muted, pointerEvents:"none", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%" }}>
+                  Search for "{searchPrompt.term}"
+                </span>
+              )}
+              <input
+                value={search}
+                onChange={e=>setSearch(e.target.value)}
+                onFocus={()=>setShowSearchSuggestions(true)}
+                onBlur={()=>setTimeout(()=>setShowSearchSuggestions(false), 150)}
+                onKeyDown={e=>{ if(e.key==="Enter") commitSearch(search); }}
+                aria-label="Search stores and services"
+                style={{ width:"100%", border:"none", fontSize:14, color:C.text, outline:"none", background:"transparent", fontFamily:"'Nunito',sans-serif" }}
+              />
+            </div>
             {search && <div onClick={()=>setSearch("")} style={{ cursor:"pointer", display:"flex" }}><X size={16} color={C.muted} /></div>}
           </div>
+          {/* Recent + trending — shown the moment the field is focused,
+              before anything is typed, so search never starts from a
+              blank dropdown. */}
+          {showSearchSuggestions && search.trim().length < 2 && (recentSearches.length > 0 || TRENDING_SEARCHES.length > 0) && (
+            <div style={{ position:"absolute", top:"calc(100% + 6px)", left:0, right:0, background:C.card, borderRadius:16, boxShadow:"0 8px 28px rgba(0,0,0,0.18)", zIndex:20, padding:"12px 14px 14px" }}>
+              {recentSearches.length > 0 && (
+                <>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                    <p style={{ fontSize:10, fontWeight:900, color:C.muted, letterSpacing:1 }}>RECENT</p>
+                    <span onMouseDown={e => { e.preventDefault(); setRecentSearches([]); try { localStorage.removeItem(RECENT_KEY); } catch {} }} style={{ fontSize:11, color:C.pri, fontWeight:800, cursor:"pointer" }}>Clear</span>
+                  </div>
+                  {recentSearches.map(r => (
+                    <div key={r} onMouseDown={e => { e.preventDefault(); commitSearch(r); }} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 2px", cursor:"pointer" }}>
+                      <HistoryIcon size={14} color={C.muted} />
+                      <span style={{ fontSize:13, color:C.text, fontWeight:600 }}>{r}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              <p style={{ fontSize:10, fontWeight:900, color:C.muted, letterSpacing:1, margin:`${recentSearches.length?10:0}px 0 8px` }}>TRENDING</p>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                {TRENDING_SEARCHES.map(t => (
+                  <span key={t} onMouseDown={e => { e.preventDefault(); commitSearch(t); }} style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12, fontWeight:700, color:C.text, background:"#F3F4F9", padding:"7px 12px", borderRadius:20, cursor:"pointer" }}>
+                    <TrendingUp size={12} color={C.priDark} /> {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Search suggestions dropdown. Each suggestion uses
               onMouseDown (not onClick) with preventDefault — this stops
               the input from ever blurring in the first place when a
@@ -1605,7 +1667,7 @@ export default function CustomerApp() {
                 {suggestions.map((s,i) => (
                   <div
                     key={i}
-                    onMouseDown={e => { e.preventDefault(); setSearch(s.label); setSelCat(null); setScreen("stores"); fetchStores(); setShowSearchSuggestions(false); }}
+                    onMouseDown={e => { e.preventDefault(); commitSearch(s.label); }}
                     style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 16px", cursor:"pointer", borderBottom:i<suggestions.length-1?"1px solid #F0F2F8":"none" }}
                   >
                     <Search size={13} color={C.muted} />
@@ -1651,10 +1713,28 @@ export default function CustomerApp() {
           </div>
         ))}
 
+        {/* Swiggy/Zomato-style momentum before the full list: live
+            deals first, then quick horizontal rails you can flick
+            through, then everything. Each block hides itself when it
+            has nothing to show. */}
+        {!loading && stores.length > 0 && (() => {
+          const withDist = stores.map(s => ({ ...s, distanceKm: myLocation && s.location?.lat ? haversineKm(myLocation.lat, myLocation.lng, s.location.lat, s.location.lng) : null }));
+          const topRated = [...withDist].filter(s => s.rating >= 4.3).sort((a,b) => b.rating - a.rating).slice(0, 10);
+          const openNow  = withDist.filter(s => s.isOpen).sort((a,b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity)).slice(0, 10);
+          const goAll = (f) => { setSelCat(null); setSelGroup(null); setFilter(f); setScreen("stores"); fetchStores(); };
+          return (
+            <>
+              <OffersCarousel stores={withDist} offersMap={storeOffersMap} onSelect={handleSelectStore} />
+              <StoreRail title="Top rated near you" icon={Star} iconColor="#F5A623" stores={topRated} offersMap={storeOffersMap} onSelect={handleSelectStore} onSeeAll={() => goAll("Top Rated")} />
+              <StoreRail title="Open right now" icon={Flame} iconColor="#FF6B35" stores={openNow} offersMap={storeOffersMap} onSelect={handleSelectStore} onSeeAll={() => goAll("Open")} />
+            </>
+          );
+        })()}
+
         <div style={{ padding:"8px 16px 0" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:14 }}>
-            <h2 style={{ fontSize:17, fontWeight:900, color:C.text }}>Stores near you</h2>
-            <span onClick={() => {setSelCat(null);setSelGroup(null);setScreen("stores");fetchStores();}} style={{ fontSize:12, color:C.pri, fontWeight:700, cursor:"pointer" }}>See All</span>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+            <h2 style={{ fontSize:17, fontWeight:900, color:C.text }}>All stores near you</h2>
+            <span onClick={() => {setSelCat(null);setSelGroup(null);setScreen("stores");fetchStores();}} style={{ fontSize:12, color:C.pri, fontWeight:800, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:2 }}>See all <ChevronRight size={14} /></span>
           </div>
           {loading ? <Loader skeleton /> : stores.length===0 ? (
             <div style={{ textAlign:"center", padding:"40px 20px" }}>
@@ -1740,7 +1820,7 @@ export default function CustomerApp() {
 
   // ── Stores List ───────────────────────────────────────────────────────────
   if (screen==="stores") return (
-    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
+    <div key="stores" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
       {ToastEl}
       <TopBar title={selCat?.name||selGroup?.name||"All Services"} sub={userArea||userCity||"Near You"} onBack={() => {setScreen("home");setTab("home");setSelCat(null);setSelGroup(null);setSearch("");}} />
       <div style={{ padding:"14px 16px 0" }}>
@@ -1828,7 +1908,7 @@ export default function CustomerApp() {
 
   // ── Favorites ─────────────────────────────────────────────────────────────
   if (screen==="favorites") return (
-    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
+    <div key="favorites" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
       {ToastEl}
       <TopBar title="My Favorites" sub={`${favStores.filter(s=>favoriteIds.has(s._id)).length} saved stores`} onBack={() => {setScreen("home");setTab("profile");}} />
       <div style={{ padding:"16px" }}>
@@ -1860,7 +1940,7 @@ export default function CustomerApp() {
 
   // ── Help & Support ────────────────────────────────────────────────────────
   if (screen==="help") return (
-    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
+    <div key="help" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
       {ToastEl}
       <TopBar title="Help & Support" sub="We're here to help" onBack={() => {setScreen("home");setTab("profile");}} />
       <div style={{ padding:16 }}>
@@ -1979,199 +2059,216 @@ export default function CustomerApp() {
 
   // ── Store Detail ──────────────────────────────────────────────────────────
   if (screen==="detail" && selStore) return (
-    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:90 }}>
-      <div style={{ height:200, backgroundImage:`url(${getStoreCover(selStore)})`, backgroundSize:"cover", backgroundPosition:"center", position:"relative" }}>
-        <div style={{ position:"absolute", inset:0, background:"linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.2) 100%)" }} />
+    <div key="detail" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:90 }}>
+      {/* Hero — full-bleed photo with the info card overlapping its
+          bottom edge (Zomato's restaurant-page layout). The photo does
+          the selling; the card carries the facts. */}
+      <div style={{ height:260, backgroundImage:`url(${getStoreCover(selStore)})`, backgroundSize:"cover", backgroundPosition:"center", position:"relative" }}>
+        <div style={{ position:"absolute", inset:0, background:"linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.55) 100%)" }} />
         <button aria-label="Go back" onClick={() => setScreen("stores")} style={{ position:"absolute", top:46, left:16, background:"rgba(255,255,255,0.95)", border:"none", borderRadius:12, width:38, height:38, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.15)", zIndex:2 }}>
           <ArrowLeft size={18} color="#1A1A2E" />
         </button>
-        <button aria-label="Toggle favorite" onClick={() => toggleFavorite(selStore)} style={{ position:"absolute", top:46, right:16, background:"rgba(255,255,255,0.95)", border:"none", borderRadius:12, width:38, height:38, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.15)", zIndex:2 }}>
-          <Heart size={18} color={favoriteIds.has(selStore._id) ? C.pri : "#1A1A2E"} fill={favoriteIds.has(selStore._id) ? C.pri : "none"} />
-        </button>
-        <button aria-label="Share this store" onClick={() => shareStore(selStore)} style={{ position:"absolute", top:46, right:62, background:"rgba(255,255,255,0.95)", border:"none", borderRadius:12, width:38, height:38, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.15)", zIndex:2 }}>
-          <Share2 size={17} color="#1A1A2E" />
-        </button>
-        <div style={{ position:"absolute", bottom:16, left:16, right:16, zIndex:2 }}>
-          <h2 style={{ fontSize:22, fontWeight:900, color:"#fff", marginBottom:6 }}>{selStore.name}</h2>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <div style={{ background:selStore.isOpen?C.green:C.red, borderRadius:20, padding:"4px 12px", display:"flex", alignItems:"center", gap:5 }}>
-              <Circle size={7} color="#fff" fill="#fff" />
-              <span style={{ color:"#fff", fontWeight:800, fontSize:11 }}>{selStore.isOpen?"Open now":"Closed"}</span>
-            </div>
-            <span style={{ color:"rgba(255,255,255,0.8)", fontSize:12, fontWeight:700 }}>★ {selStore.rating}</span>
-          </div>
+        <div style={{ position:"absolute", top:46, right:16, display:"flex", gap:8, zIndex:2 }}>
+          <button aria-label="Share this store" onClick={() => shareStore(selStore)} style={{ background:"rgba(255,255,255,0.95)", border:"none", borderRadius:12, width:38, height:38, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.15)" }}>
+            <Share2 size={17} color="#1A1A2E" />
+          </button>
+          <button aria-label="Toggle favorite" onClick={() => toggleFavorite(selStore)} style={{ background:"rgba(255,255,255,0.95)", border:"none", borderRadius:12, width:38, height:38, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.15)" }}>
+            <Heart size={18} color={favoriteIds.has(selStore._id) ? C.priDark : "#1A1A2E"} fill={favoriteIds.has(selStore._id) ? C.priDark : "none"} />
+          </button>
         </div>
         {selStore.photos?.length > 1 && (
-          <button onClick={() => setPhotoViewerIdx(0)} style={{ position:"absolute", bottom:16, right:16, background:"rgba(0,0,0,0.55)", border:"none", borderRadius:10, padding:"6px 12px", display:"flex", alignItems:"center", gap:5, cursor:"pointer", zIndex:2 }}>
+          <button onClick={() => setPhotoViewerIdx(0)} style={{ position:"absolute", bottom:44, right:16, background:"rgba(0,0,0,0.55)", backdropFilter:"blur(6px)", border:"none", borderRadius:10, padding:"6px 12px", display:"flex", alignItems:"center", gap:5, cursor:"pointer", zIndex:2 }}>
             <ImageIcon size={13} color="#fff" />
-            <span style={{ color:"#fff", fontSize:12, fontWeight:800 }}>{selStore.photos.length}</span>
+            <span style={{ color:"#fff", fontSize:12, fontWeight:800 }}>{selStore.photos.length} photos</span>
           </button>
         )}
       </div>
+
+      {/* Overlapping identity card */}
+      <div style={{ margin:"-32px 16px 0", position:"relative", zIndex:3 }}>
+        <div style={{ background:C.card, borderRadius:20, padding:"16px 16px 14px", boxShadow:"0 10px 30px rgba(0,0,0,0.12)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <h2 style={{ fontSize:21, fontWeight:900, color:C.text, lineHeight:1.15 }}>{selStore.name}</h2>
+              <p style={{ fontSize:12, color:C.muted, marginTop:4, fontWeight:700 }}>
+                <span style={{ color:getCat(selStore.category).color }}>{getCat(selStore.category).name}</span>
+                {" · "}{selStore.area ? `${selStore.area}, ` : ""}{selStore.city}
+              </p>
+            </div>
+            <div style={{ textAlign:"right", flexShrink:0 }}>
+              <RatingPill rating={selStore.rating} size="lg" />
+              <p style={{ fontSize:10, color:C.muted, marginTop:4, fontWeight:700 }}>{selStore.totalReviews || 0} ratings</p>
+            </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:12, flexWrap:"wrap" }}>
+            <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:selStore.isOpen?C.green+"18":"#F3F4F9", color:selStore.isOpen?"#0F8F5A":C.muted, fontSize:11, fontWeight:900, padding:"5px 10px", borderRadius:20 }}>
+              <Circle size={7} color="currentColor" fill="currentColor" /> {selStore.isOpen ? "Open now" : "Closed"}
+            </span>
+            <span style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12, color:C.muted, fontWeight:700 }}>
+              <Clock size={12} /> {selStore.workingHours?.open} – {selStore.workingHours?.close}
+            </span>
+            {selStore.distanceKm != null && (
+              <span style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12, color:C.muted, fontWeight:700 }}>
+                <MapPin size={12} /> {formatDistance(selStore.distanceKm)}
+              </span>
+            )}
+          </div>
+          <div style={{ display:"flex", gap:8, marginTop:14 }}>
+            <a href={getDirectionsUrl(selStore)} target="_blank" rel="noreferrer" style={{ textDecoration:"none", flex:1 }}>
+              <div className="pressable" style={{ padding:"11px", background:C.blue+"12", color:C.blue, border:`1.5px solid ${C.blue}33`, borderRadius:12, fontWeight:800, fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                <Navigation size={13} /> Directions
+              </div>
+            </a>
+            <a href={`tel:${selStore.phone}`} style={{ textDecoration:"none", flex:1 }}>
+              <div className="pressable" style={{ padding:"11px", background:C.green+"14", color:"#0F8F5A", border:`1.5px solid ${C.green}44`, borderRadius:12, fontWeight:800, fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                <Phone size={13} /> Call
+              </div>
+            </a>
+            <button onClick={() => setShowChat(true)} className="pressable" style={{ flex:1, padding:"11px", background:C.pri+"12", color:C.pri, border:`1.5px solid ${C.pri}33`, borderRadius:12, fontWeight:800, fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6, fontFamily:"'Nunito',sans-serif" }}>
+              <MessageCircle size={13} /> Message
+            </button>
+          </div>
+        </div>
+      </div>
+
       {selStore.photos?.length > 1 && (
-        <div style={{ display:"flex", gap:8, overflowX:"auto", padding:"12px 16px 0", scrollbarWidth:"none" }}>
+        <div style={{ display:"flex", gap:8, overflowX:"auto", padding:"14px 16px 0", scrollbarWidth:"none" }}>
           {selStore.photos.map((p,i) => (
-            <img key={i} src={p} alt="" loading="lazy" onClick={() => setPhotoViewerIdx(i)} style={{ width:72, height:72, borderRadius:14, objectFit:"cover", flexShrink:0, cursor:"pointer", border:"2px solid #fff", boxShadow:"0 2px 8px rgba(0,0,0,0.1)" }} />
+            <img key={i} src={p} alt="" loading="lazy" onClick={() => setPhotoViewerIdx(i)} className="pressable" style={{ width:72, height:72, borderRadius:14, objectFit:"cover", flexShrink:0, cursor:"pointer", border:"2px solid #fff", boxShadow:"0 2px 8px rgba(0,0,0,0.1)" }} />
           ))}
         </div>
       )}
       <div style={{ padding:"16px 16px 100px" }}>
-        <Card>
-          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:12 }}>
-            <StarRating rating={selStore.rating} size={16} />
-            <span style={{ fontSize:12, color:C.muted, marginLeft:4 }}>{selStore.rating} · {selStore.totalReviews} reviews</span>
-          </div>
-          <InfoRow icon={MapPin} text={`${selStore.area?selStore.area+", ":""}${selStore.city}`} />
-          <InfoRow icon={Home}   text={selStore.address} />
-          <InfoRow icon={Phone}  text={selStore.phone} />
-          <InfoRow icon={Clock}  text={`${selStore.workingHours?.open} – ${selStore.workingHours?.close}`} />
-          <div style={{ display:"flex", gap:8, marginTop:12 }}>
-          <a href={getDirectionsUrl(selStore)} target="_blank" rel="noreferrer" style={{ textDecoration:"none", flex:1 }}>
-            <div style={{ padding:"10px", background:C.blue+"12", color:C.blue, border:`1.5px solid ${C.blue}33`, borderRadius:10, fontWeight:800, fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-              <Navigation size={13} /> Get Directions
-            </div>
-          </a>
-          <button onClick={() => setShowChat(true)} style={{ flex:1, padding:"10px", background:C.pri+"12", color:C.pri, border:`1.5px solid ${C.pri}33`, borderRadius:10, fontWeight:800, fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6, fontFamily:"'Nunito',sans-serif" }}>
-            <MessageCircle size={13} /> Message
-          </button>
-          </div>
         {/* fallback={null} — same reasoning as BookingAssistant above:
             unconditionally mounted, so a visible fallback would flash on
             every store-detail visit regardless of whether chat is ever opened. */}
         <Suspense fallback={null}>
           <CustomerChatModal open={showChat} onClose={() => setShowChat(false)} store={selStore} />
         </Suspense>
-        </Card>
 
-        {/* Active offers */}
+        {/* Live deals stay above the tabs — they're the thing most
+            likely to tip someone into booking, so they're never hidden
+            behind a tap. */}
         {storeOffers.length > 0 && (
-          <Card>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-              <Tag size={16} color={C.pri} />
-              <h3 style={{ fontSize:14, fontWeight:900, color:C.text }}>Offers for you</h3>
-            </div>
+          <div style={{ marginBottom:14 }}>
             {storeOffers.map(o => (
-              <div key={o._id} style={{ background:`linear-gradient(100deg,${C.pri}10,${C.pri}05)`, border:`1.5px dashed ${C.pri}44`, borderRadius:14, padding:"12px 14px", marginBottom:8 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
-                  {o.discountType==="free" ? (
-                    <>
-                      <Gift size={13} color={C.green} />
-                      <span style={{ fontSize:14, fontWeight:900, color:C.green }}>FREE</span>
-                    </>
+              <div key={o._id} style={{ background:`linear-gradient(100deg,${C.pri}14,${C.priDark}0D)`, border:`1.5px dashed ${C.pri}55`, borderRadius:16, padding:"12px 14px", marginBottom:8, display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ width:44, height:44, borderRadius:12, background:`linear-gradient(135deg,${C.pri},${C.priDark})`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  {o.discountType==="free" ? <Gift size={20} color="#fff" /> : o.discountType==="percentage" ? <Percent size={20} color="#fff" /> : <IndianRupee size={20} color="#fff" />}
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <p style={{ fontSize:15, fontWeight:900, color:C.text }}>
+                    {o.discountType==="free" ? "FREE" : o.discountType==="percentage" ? `${o.discountValue}% OFF` : `₹${o.discountValue} OFF`}
+                    <span style={{ fontWeight:700, color:C.muted, fontSize:12 }}> · {o.title}</span>
+                  </p>
+                  <p style={{ fontSize:11, color:C.muted, marginTop:2 }}>
+                    {o.description || "Applied automatically at checkout"}{o.minBookingValue > 0 ? ` · Min ₹${o.minBookingValue}` : ""}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Services / Reviews / Info */}
+        <div className="seg-tabs" style={{ marginBottom:14 }}>
+          {[["services","Services"],["reviews",`Reviews${selStore.totalReviews?` (${selStore.totalReviews})`:""}`],["info","Info"]].map(([k,label]) => (
+            <button key={k} className={detailTab===k?"active":undefined} onClick={() => setDetailTab(k)}>{label}</button>
+          ))}
+        </div>
+
+        {detailTab === "services" && (
+          <div key="services" className="fade-in">
+            {selStore.hasStaff && selStore.staff?.filter(s=>s.isActive).length > 0 && (
+              <Card>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+                  <Users size={16} color={C.pri} />
+                  <h3 style={{ fontSize:14, fontWeight:900, color:C.text }}>
+                    {selStore.staff.filter(s=>s.isActive).length} {selStore.staff.filter(s=>s.isActive).length===1?"Specialist":"Specialists"} available
+                  </h3>
+                </div>
+                <div style={{ display:"flex", gap:8, overflowX:"auto", scrollbarWidth:"none" }}>
+                  {selStore.staff.filter(s=>s.isActive).map(s => (
+                    <div key={s._id} style={{ flexShrink:0, background:C.inputBg, border:"1.5px solid #E8ECF5", borderRadius:12, padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
+                      <div style={{ width:30, height:30, borderRadius:"50%", background:C.pri+"18", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, color:C.pri, fontSize:13 }}>
+                        {s.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p style={{ fontSize:12, fontWeight:800, color:C.text, whiteSpace:"nowrap" }}>{s.name}</p>
+                        {s.specialization && <p style={{ fontSize:10, color:C.muted, whiteSpace:"nowrap" }}>{s.specialization}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+            <Card style={{ padding:"4px 16px" }}>
+              {selStore.services?.map((s,i) => (
+                <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"13px 0", borderBottom:i<selStore.services.length-1?"1px solid #F0F2F8":"none" }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize:14.5, fontWeight:800, color:C.text }}>{s.name}</p>
+                    <p style={{ fontSize:11, color:C.muted, marginTop:3, display:"flex", alignItems:"center", gap:4 }}>
+                      <Clock size={11} /> {s.duration} min{s.recurrenceDays ? ` · repeat every ${s.recurrenceDays} days` : ""}
+                    </p>
+                  </div>
+                  {s.isPriceVariable ? (
+                    <span style={{ fontSize:11, fontWeight:800, color:"#92610A", background:C.acc+"22", padding:"4px 9px", borderRadius:8, flexShrink:0 }}>On inspection</span>
                   ) : (
-                    <>
-                      {o.discountType==="percentage" ? <Percent size={13} color={C.pri} /> : <IndianRupee size={13} color={C.pri} />}
-                      <span style={{ fontSize:14, fontWeight:900, color:C.pri }}>{o.discountType==="percentage"?`${o.discountValue}% OFF`:`₹${o.discountValue} OFF`}</span>
-                    </>
+                    <span style={{ fontSize:15, fontWeight:900, color:C.text, flexShrink:0 }}>₹{s.price}</span>
                   )}
                 </div>
-                <p style={{ fontSize:12, fontWeight:700, color:C.text, marginBottom:2 }}>{o.title}</p>
-                {o.description && <p style={{ fontSize:11, color:C.muted }}>{o.description}</p>}
-                {o.minBookingValue > 0 && <p style={{ fontSize:10, color:C.muted, marginTop:4 }}>Min. booking value: ₹{o.minBookingValue}</p>}
-              </div>
-            ))}
-          </Card>
-        )}
-
-        {/* Reviews section */}
-        {selStore.reviews?.length > 0 && (
-          <Card>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <Star size={16} color={C.acc} fill={C.acc} />
-                <h3 style={{ fontSize:14, fontWeight:900, color:C.text }}>Reviews</h3>
-              </div>
-              <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                <span style={{ fontSize:18, fontWeight:900, color:C.text }}>{selStore.rating}</span>
-                <span style={{ fontSize:12, color:C.muted }}>/ 5 · {selStore.totalReviews} review{selStore.totalReviews!==1?"s":""}</span>
-              </div>
-            </div>
-            {[...selStore.reviews].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,5).map((r,i) => (
-              <div key={i} style={{ paddingBottom:12, marginBottom:12, borderBottom: i<Math.min(selStore.reviews.length,5)-1?"1px solid #F0F2F8":"none" }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                    <div style={{ width:28, height:28, borderRadius:"50%", background:C.pri+"22", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:900, color:C.pri }}>
-                      {(r.name||"U").charAt(0).toUpperCase()}
-                    </div>
-                    <span style={{ fontSize:13, fontWeight:800, color:C.text }}>{r.name||"Customer"}</span>
-                  </div>
-                  <div style={{ display:"flex", gap:2 }}>
-                    <StarRating rating={r.rating} size={11} />
-                  </div>
-                </div>
-                {r.comment && <p style={{ fontSize:12, color:C.muted, marginLeft:34, lineHeight:1.5 }}>{r.comment}</p>}
-              </div>
-            ))}
-          </Card>
-        )}
-
-        {selStore.hasStaff && selStore.staff?.filter(s=>s.isActive).length > 0 && (
-          <Card>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-              <Users size={16} color={C.pri} />
-              <h3 style={{ fontSize:14, fontWeight:900, color:C.text }}>
-                {selStore.staff.filter(s=>s.isActive).length} {selStore.staff.filter(s=>s.isActive).length===1?"Staff Member":"Staff Members"} Available
-              </h3>
-            </div>
-            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-              {selStore.staff.filter(s=>s.isActive).map(s => (
-                <div key={s._id} style={{ background:C.inputBg, border:"1.5px solid #E8ECF5", borderRadius:12, padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
-                  <div style={{ width:26, height:26, borderRadius:8, background:C.pri+"18", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                    <Users size={13} color={C.pri} />
-                  </div>
-                  <div>
-                    <p style={{ fontSize:12, fontWeight:800, color:C.text }}>{s.name}</p>
-                    {s.specialization && <p style={{ fontSize:10, color:C.muted }}>{s.specialization}</p>}
-                  </div>
-                </div>
               ))}
-            </div>
-          </Card>
-        )}
-        <Card>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-            <Wrench size={16} color={C.pri} />
-            <h3 style={{ fontSize:14, fontWeight:900, color:C.text }}>Services</h3>
+            </Card>
           </div>
-          {selStore.services?.map((s,i) => (
-            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"11px 0", borderBottom:i<selStore.services.length-1?"1px solid #F0F2F8":"none" }}>
-              <div>
-                <span style={{ fontSize:14, fontWeight:700, color:C.text }}>{s.name}</span>
-                <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:2 }}>
-                  <Clock size={11} color={C.muted} />
-                  <span style={{ fontSize:11, color:C.muted }}>{s.duration} min</span>
+        )}
+
+        {detailTab === "reviews" && (
+          <div key="reviews" className="fade-in">
+            <Card>
+              <div style={{ display:"flex", alignItems:"center", gap:14, paddingBottom:14, marginBottom:14, borderBottom:"1px solid #F0F2F8" }}>
+                <div style={{ textAlign:"center" }}>
+                  <p style={{ fontSize:34, fontWeight:900, color:C.text, lineHeight:1 }}>{selStore.rating || "–"}</p>
+                  <div style={{ marginTop:6, display:"flex", justifyContent:"center" }}><StarRating rating={selStore.rating} size={13} /></div>
+                </div>
+                <div style={{ flex:1 }}>
+                  <p style={{ fontSize:13, fontWeight:800, color:C.text }}>{selStore.totalReviews || 0} rating{selStore.totalReviews===1?"":"s"}</p>
+                  <p style={{ fontSize:11, color:C.muted, marginTop:2 }}>From customers who booked through Sloty and completed their visit.</p>
                 </div>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:1 }}>
-                {s.isPriceVariable ? (
-                  <span style={{ fontSize:11, fontWeight:800, color:"#92610A", background:C.acc+"22", padding:"3px 8px", borderRadius:8 }}>On Inspection</span>
-                ) : (
-                  <>
-                    <IndianRupee size={13} color={C.pri} strokeWidth={2.5} />
-                    <span style={{ fontSize:14, fontWeight:900, color:C.pri }}>{s.price}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </Card>
-        <Card>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-            <MessageSquare size={16} color={C.pri} />
-            <h3 style={{ fontSize:14, fontWeight:900, color:C.text }}>Reviews</h3>
+              {selStore.reviews?.length > 0 ? [...selStore.reviews].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map((r,i,arr) => (
+                <div key={i} style={{ paddingBottom:12, marginBottom:12, borderBottom: i<arr.length-1?"1px solid #F0F2F8":"none" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <div style={{ width:30, height:30, borderRadius:"50%", background:C.pri+"22", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:900, color:C.pri }}>
+                        {(r.name||"U").charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p style={{ fontSize:13, fontWeight:800, color:C.text }}>{r.name||"Customer"}</p>
+                        {r.createdAt && <p style={{ fontSize:10, color:C.muted }}>{new Date(r.createdAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>}
+                      </div>
+                    </div>
+                    <RatingPill rating={r.rating} />
+                  </div>
+                  {r.comment && <p style={{ fontSize:12.5, color:"#3A4256", marginLeft:38, lineHeight:1.55 }}>{r.comment}</p>}
+                </div>
+              )) : (
+                <p style={{ fontSize:12, color:C.muted, textAlign:"center", padding:"8px 0" }}>No reviews yet — be the first after your visit!</p>
+              )}
+            </Card>
           </div>
-          {selStore.reviews?.length > 0 ? selStore.reviews.slice(0,3).map((rev,i) => (
-            <div key={i} style={{ paddingBottom:12, borderBottom:i<2 && i<selStore.reviews.length-1?"1px solid #F0F2F8":"none", marginBottom:12 }}>
-              <span style={{ fontSize:13, fontWeight:800, color:C.text }}>{rev.name}</span>
-              <div style={{ display:"flex", gap:2, marginTop:4, marginBottom:4 }}>
-                <StarRating rating={rev.rating} size={13} />
-              </div>
-              {rev.comment && <p style={{ fontSize:12, color:C.muted }}>{rev.comment}</p>}
-            </div>
-          )) : (
-            <p style={{ fontSize:12, color:C.muted, textAlign:"center", padding:"8px 0" }}>No reviews yet — be the first after your visit!</p>
-          )}
-        </Card>
+        )}
+
+        {detailTab === "info" && (
+          <div key="info" className="fade-in">
+            <Card>
+              <InfoRow icon={Home}   text={selStore.address} />
+              <InfoRow icon={MapPin} text={`${selStore.area?selStore.area+", ":""}${selStore.city}${selStore.pincode?` – ${selStore.pincode}`:""}`} />
+              <InfoRow icon={Phone}  text={selStore.phone} />
+              <InfoRow icon={Clock}  text={`${selStore.workingHours?.open} – ${selStore.workingHours?.close} · ${(selStore.workingHours?.days||[]).join(", ")}`} />
+              {selStore.description && <p style={{ fontSize:12.5, color:"#3A4256", lineHeight:1.6, marginTop:10 }}>{selStore.description}</p>}
+            </Card>
+          </div>
+        )}
       </div>
       <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"12px 20px 24px", background:C.card, boxShadow:"0 -4px 20px rgba(0,0,0,0.08)" }}>
         <Btn onClick={() => openBooking(selStore)} disabled={!selStore.isOpen}>
@@ -2225,7 +2322,7 @@ export default function CustomerApp() {
 
   // ── Booking ───────────────────────────────────────────────────────────────
   if (screen==="booking" && selStore) return (
-    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:110 }}>
+    <div key="booking" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:110 }}>
       <TopBar title="Book a Slot" sub={selStore.name} onBack={() => setScreen("detail")} />
       <div style={{ padding:"16px" }}>
         <BookingStepper current={bookingStep} steps={bookingSteps} />
@@ -2502,7 +2599,7 @@ export default function CustomerApp() {
 
   // ── My Bookings ───────────────────────────────────────────────────────────
   if (tab==="bookings") return (
-    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
+    <div key="bookings" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
       {ToastEl}
       {ReviewSheet}
       {CancelSheet}
@@ -2595,7 +2692,7 @@ export default function CustomerApp() {
               <div style={{ background:C.blue+"12", borderRadius:10, padding:"10px 14px", marginTop:10, display:"flex", alignItems:"center", gap:8, border:`1px solid ${C.blue}22` }}>
                 <Users size={14} color={C.blue} />
                 <span style={{ fontSize:12, color:C.blue, fontWeight:800 }}>
-                  {queueAhead[b._id]===0 ? "You're next in line!" : `${queueAhead[b._id]} ${queueAhead[b._id]===1?"person":"people"} ahead of you`}
+                  {queueAhead[b._id]===0 ? "You're next in line!" : <><AnimatedNumber value={queueAhead[b._id]} style={{ fontSize:14, fontWeight:900 }} /> {queueAhead[b._id]===1?"person":"people"} ahead of you</>}
                 </span>
               </div>
             )}
@@ -2647,7 +2744,7 @@ export default function CustomerApp() {
 
   // ── Profile ───────────────────────────────────────────────────────────────
   if (tab==="profile") return (
-    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:80 }}>
+    <div key="profile" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:80 }}>
       <div style={{ background:`linear-gradient(135deg,${C.pri},#E0406A)`, padding:"44px 20px 32px", borderBottomLeftRadius:32, borderBottomRightRadius:32 }}>
         <div style={{ display:"flex", gap:16, alignItems:"center" }}>
           <div style={{ width:64, height:64, borderRadius:"50%", background:"rgba(255,255,255,0.25)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, color:"#fff", fontWeight:900 }}>{user.name?.charAt(0)}</div>

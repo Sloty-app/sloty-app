@@ -1,8 +1,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
 
 :root {
-  --pri: #FF5E7D;
-  --pri-dark: #E0406A;
+  /* Matches the C palette in constants.js — the JS side had already moved
+     to violet→magenta, but this CSS var was still the old coral, so any
+     CSS-driven surface (selected slot chips, focus rings) was a visibly
+     different brand colour from every JS-styled button next to it. */
+  --pri: #8B5CF6;
+  --pri-dark: #DB2777;
   --sec: #1A1A2E;
   --green: #00C9A7;
   --red: #FF6B6B;
@@ -168,6 +172,78 @@ input[type=number] { -moz-appearance: textfield; }
 
 .fade-in { animation: fadeIn 0.4s var(--ease); }
 
+/* ── Motion & feel ─────────────────────────────────────────────────────
+   Screens used to hard-swap with no motion; these give every screen a
+   short settle-in, every tappable card a press response, and live
+   numbers a tick — the density of small, deliberate motion that makes
+   an app feel native rather than assembled. All short (≤300ms) and all
+   disabled by the reduced-motion rule above. */
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.screen-enter { animation: screenIn 0.28s var(--ease) both; }
+
+@keyframes tickIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.tick-in { animation: tickIn 0.32s var(--ease-spring) both; }
+
+@keyframes placeholderIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.placeholder-in { animation: placeholderIn 0.35s var(--ease) both; }
+
+@keyframes navPop {
+  0%   { transform: scale(0.85); }
+  60%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+.nav-pop { animation: navPop 0.35s var(--ease-spring); }
+
+.pressable { transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease); }
+.pressable:active { transform: scale(0.97); }
+
+/* Horizontal snap-scroll rail (offers carousel, store rails). */
+.rail {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 0 16px 6px;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: 16px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.rail > * { scroll-snap-align: start; flex-shrink: 0; }
+
+/* Zomato-style rating pill — the single most recognisable "this is a
+   real consumer app" element; solid green, white text, tiny star. */
+.rating-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #1F8F4E;
+  color: #fff;
+  font-weight: 800;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+/* Detail-page tab strip (Services / Reviews / Info). */
+.seg-tabs { display: flex; gap: 4px; background: #EEF0F6; padding: 4px; border-radius: 14px; }
+.seg-tabs button {
+  flex: 1; border: none; padding: 9px 6px; border-radius: 11px; font-size: 12.5px; font-weight: 800;
+  background: transparent; color: var(--muted); cursor: pointer; font-family: inherit;
+  transition: background 0.2s var(--ease), color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.seg-tabs button.active { background: #fff; color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+
 .store-card {
   background: var(--card);
   border-radius: var(--radius-lg);
@@ -317,7 +393,7 @@ input[type=number] { -moz-appearance: textfield; }
   background: linear-gradient(135deg, var(--pri), var(--pri-dark));
   color: #fff;
   border-color: var(--pri);
-  box-shadow: 0 4px 16px rgba(255, 94, 125, 0.35), 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.35), 0 1px 3px rgba(0, 0, 0, 0.1);
   transform: scale(1.03);
 }
 .slot-chip--disabled { cursor: not-allowed; opacity: 0.65; }

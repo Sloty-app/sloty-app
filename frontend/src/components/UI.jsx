@@ -126,7 +126,7 @@ export function BottomNav({ tabs, active, onChange }) {
         const isActive = active === key;
         return (
           <div key={key} onClick={() => onChange(key)} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3, cursor:"pointer" }}>
-            <div style={{ width:52, height:32, borderRadius:20, background:isActive?C.pri+"18":"transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"all 0.25s var(--ease-spring, ease)" }}>
+            <div key={isActive ? "on" : "off"} className={isActive ? "nav-pop" : undefined} style={{ width:52, height:32, borderRadius:20, background:isActive?C.pri+"18":"transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"all 0.25s var(--ease-spring, ease)" }}>
               <Icon size={20} color={isActive?C.pri:C.muted} strokeWidth={isActive?2.5:1.8} />
             </div>
             <span style={{ fontSize:10, color:isActive?C.pri:C.muted, fontWeight:isActive?800:500, transition:"color 0.2s var(--ease, ease)" }}>{label}</span>
