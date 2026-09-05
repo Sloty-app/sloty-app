@@ -1647,8 +1647,18 @@ export default function OwnerApp() {
                   // AM". This is exactly what was making some booked
                   // slots silently look Open, and taps on them show
                   // nothing — this fixes both at the source.
+                  //
+                  // Only "confirmed"/"in_progress" actually hold the
+                  // slot — same rule the backend's own availability
+                  // check uses. Excluding just "cancelled" (as this used
+                  // to) left completed and no-show bookings still
+                  // showing their slot as booked/red forever, even
+                  // though the slot is genuinely free again the moment
+                  // the customer's done or didn't show — confirmed live
+                  // by completing one booking and no-showing another and
+                  // watching both stay stuck red here.
                   const slotBookingsHere = bookings.filter(b => {
-                    if (b.date !== gridDate || b.status === "cancelled") return false;
+                    if (b.date !== gridDate || !["confirmed","in_progress"].includes(b.status)) return false;
                     const bStart = slotTimeToMinutes(b.timeSlot);
                     const bEnd = bStart + (b.service?.duration || gridIntervalMin);
                     return bStart < slotEnd && bEnd > slotStart;

@@ -87,19 +87,37 @@ exports.getDashboardAnalytics = async (req, res) => {
                 noShow: { $sum: { $cond: [{ $eq: ["$status", "no_show"] }, 1, 0] } },
             } },
           ],
-          // Hour prefix parsed the same way the old regex did (the
-          // digits before the ":", no AM/PM adjustment) — same behavior
-          // as before, just evaluated in the database. onError/onNull
-          // fall back to hour 0 instead of failing the whole query if
-          // any historical row ever has a malformed timeSlot.
+          // Real 24-hour bucket, not just the digits before ":" — the
+          // earlier version dropped AM/PM entirely, so a 4:00 PM booking
+          // and a 4:00 AM booking both landed in bucket "4" and the
+          // frontend then displayed that bucket as "4AM" regardless of
+          // which one it actually was. Confirmed live: bookings made at
+          // 3:30 PM/4:00 PM showed up as "Busiest Hour: 4AM". Fixed by
+          // parsing the AM/PM suffix and adjusting to a real 0-23 hour,
+          // same rule getAvailableSlots already uses elsewhere.
+          // onError/onNull fall back to hour 0 instead of failing the
+          // whole query if any historical row ever has a malformed
+          // timeSlot.
           peakHours: [
-            { $group: {
-                _id: { $convert: {
-                  input: { $arrayElemAt: [{ $split: [{ $ifNull: ["$timeSlot", "0:00"] }, ":"] }, 0] },
+            { $addFields: {
+                _hourRaw: { $convert: {
+                  input: { $arrayElemAt: [{ $split: [{ $arrayElemAt: [{ $split: [{ $ifNull: ["$timeSlot", "12:00 AM"] }, " "] }, 0] }, ":"] }, 0] },
                   to: "int", onError: 0, onNull: 0,
                 } },
-                count: { $sum: 1 },
+                _period: { $arrayElemAt: [{ $split: [{ $ifNull: ["$timeSlot", "12:00 AM"] }, " "] }, 1] },
             } },
+            { $addFields: {
+                _hour24: { $cond: [
+                    { $and: [{ $eq: ["$_period", "PM"] }, { $ne: ["$_hourRaw", 12] }] },
+                    { $add: ["$_hourRaw", 12] },
+                    { $cond: [
+                        { $and: [{ $eq: ["$_period", "AM"] }, { $eq: ["$_hourRaw", 12] }] },
+                        0,
+                        "$_hourRaw",
+                    ] },
+                ] },
+            } },
+            { $group: { _id: "$_hour24", count: { $sum: 1 } } },
           ],
           staffPerformance: [
             { $match: { status: "completed", staffName: { $nin: [null, ""] } } },
