@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../api";
 import { C, CATS, getCat } from "../../constants";
-import { Badge, Card, Btn, Input, Select, Loader, MapPicker, LocationDetector, BottomSheet } from "../../components/UI";
+import { Badge, Card, Btn, Input, Select, Loader, MapPicker, LocationDetector, BottomSheet, BottomNav } from "../../components/UI";
 // Lazy-loaded — each ships as its own chunk instead of bloating the
 // single OwnerApp bundle every owner downloads on login regardless of
 // which tabs they actually visit. OwnerAnalytics alone pulls in
@@ -18,13 +18,13 @@ import { getSocket, joinRoom, leaveRoom } from "../../utils/socket";
 import { playChime } from "../../utils/sound";
 import { enablePushNotifications } from "../../utils/push";
 import {
-  LayoutDashboard, ListOrdered, ClipboardList, Wrench, Settings, Tag,
+  ListOrdered, Wrench, Settings, Tag,
   MapPin, Phone, Clock, IndianRupee, LogOut, Circle,
   CheckCircle, AlertCircle, Users, TrendingUp, Store,
   Plus, Trash2, ShieldCheck, XCircle, PlayCircle,
   CalendarDays, Timer, ChevronRight, Save, Coffee, History, Edit2, Wallet, BarChart3,
   Image as ImageIcon, X, UserPlus, Bell,
-  FileText, Send, MessageCircle, Mail, Ban, Search
+  FileText, Send, MessageCircle, Mail, Ban, Search, ArrowLeft
 } from "lucide-react";
 
 /* ── Upload an image file directly to Cloudinary (unsigned upload preset).
@@ -991,35 +991,26 @@ export default function OwnerApp() {
   const completed     = todayBookings.filter(b=>b.status==="completed").length;
   const queueBookings = staffFilter==="all" ? todayBookings : todayBookings.filter(b => b.staffId === staffFilter);
 
-  const TABS = [
-    { key:"dashboard", icon:LayoutDashboard, label:"Dashboard" },
-    { key:"queue",     icon:ListOrdered,     label:"Queue"     },
-    { key:"bookings",  icon:ClipboardList,   label:"Bookings"  },
-    { key:"slots",     icon:CalendarDays,    label:"Slots"     },
-    { key:"offers",    icon:Tag,             label:"Offers"    },
-    { key:"messages",  icon:MessageCircle,   label:"Messages"  },
-    { key:"history",   icon:History,         label:"History"   },
-    { key:"analytics", icon:BarChart3,       label:"Analytics" },
-    { key:"payouts",   icon:Wallet,          label:"Payouts"   },
-    { key:"settings",  icon:Settings,        label:"Settings"  },
+  // Primary four live in the fixed bottom nav (same component/pattern
+  // as CustomerApp) — always visible, no scrolling. Everything else is
+  // one tap away behind "More", rather than the old 10-wide horizontal
+  // scroll strip where the last several tabs were only discoverable by
+  // scrolling with nothing but a fade hint to suggest they existed.
+  const MORE_TABS = [
+    { key:"slots",     icon:CalendarDays, label:"Slots"     },
+    { key:"offers",    icon:Tag,          label:"Offers"    },
+    { key:"history",   icon:History,      label:"History"   },
+    { key:"analytics", icon:BarChart3,    label:"Analytics" },
+    { key:"payouts",   icon:Wallet,       label:"Payouts"   },
+    { key:"settings",  icon:Settings,     label:"Settings"  },
   ];
-
-  // 10 tabs don't fit one screen width — without this, tabs past the
-  // visible edge are silently undiscoverable (no scrollbar shown, no
-  // hint anything's cut off). This tracks whether the bar can still
-  // scroll right so a fade+arrow hint can be shown/hidden accordingly.
-  const tabBarRef = useRef(null);
-  const [showTabScrollHint, setShowTabScrollHint] = useState(false);
-  const checkTabScrollHint = () => {
-    const el = tabBarRef.current;
-    if (!el) return;
-    setShowTabScrollHint(el.scrollWidth > el.clientWidth + 4 && el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  const isMoreTab = MORE_TABS.some(t => t.key === tab);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const OWNER_BOTTOM_TABS = [["","Dashboard","dashboard"],["","Queue","queue"],["","Bookings","bookings"],["","Messages","messages"],["","More","more"]];
+  const onOwnerNavChange = (key) => {
+    if (key === "more") { setShowMoreMenu(true); return; }
+    setTab(key);
   };
-  useEffect(() => {
-    checkTabScrollHint();
-    window.addEventListener("resize", checkTabScrollHint);
-    return () => window.removeEventListener("resize", checkTabScrollHint);
-  }, [tab, myStore?._id]);
 
   if (loading) return (
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, fontFamily:"'Nunito',sans-serif" }}>
@@ -1213,27 +1204,20 @@ export default function OwnerApp() {
         </div>
       </div>
 
-      {/* Tab Bar */}
-      <div style={{ position:"relative", background:C.card, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
-        <div ref={tabBarRef} onScroll={checkTabScrollHint} style={{ display:"flex", overflowX:"auto", scrollbarWidth:"none" }}>
-          {TABS.map(({ key, icon: Icon, label }) => (
-            <button key={key} onClick={() => setTab(key)} style={{ flexShrink:0, padding:"13px 16px", border:"none", borderBottom:`3px solid ${tab===key?C.pri:"transparent"}`, background:"transparent", color:tab===key?C.pri:C.muted, fontWeight:tab===key?900:600, cursor:"pointer", fontSize:12, fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}>
-              <Icon size={15} color={tab===key?C.pri:C.muted} strokeWidth={tab===key?2.5:1.8} />
-              {label}
-            </button>
-          ))}
+      {/* Shown only while inside a "More" screen — the bottom nav no
+          longer has a highlighted item for these, so this gives back
+          both orientation (which section is this?) and a one-tap way
+          out, instead of the old tab strip's always-visible labels. */}
+      {isMoreTab && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"14px 16px", background:C.card, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
+          <button onClick={() => setTab("dashboard")} style={{ background:"none", border:"none", padding:4, cursor:"pointer", display:"flex", alignItems:"center" }}>
+            <ArrowLeft size={18} color={C.muted} />
+          </button>
+          <span style={{ fontSize:14, fontWeight:800, color:C.text }}>{MORE_TABS.find(t => t.key === tab)?.label}</span>
         </div>
-        {/* Fade + arrow hint — only shown while there are more tabs off
-            the right edge, so it's not misleading once you've scrolled
-            all the way through. */}
-        {showTabScrollHint && (
-          <div style={{ position:"absolute", top:0, right:0, bottom:0, width:36, background:`linear-gradient(90deg, transparent, ${C.card} 65%)`, display:"flex", alignItems:"center", justifyContent:"flex-end", pointerEvents:"none" }}>
-            <ChevronRight size={14} color={C.muted} style={{ marginRight:2 }} />
-          </div>
-        )}
-      </div>
+      )}
 
-      <div style={{ padding:16 }}>
+      <div style={{ padding:"16px 16px 100px" }}>
 
         {/* ── Dashboard ── */}
         {tab==="dashboard" && (
@@ -1964,6 +1948,21 @@ export default function OwnerApp() {
           </button>
         ))}
       </BottomSheet>
+
+      <BottomSheet open={showMoreMenu} onClose={() => setShowMoreMenu(false)} title="More">
+        {MORE_TABS.map(({ key, icon: Icon, label }) => (
+          <button
+            key={key}
+            onClick={() => { setTab(key); setShowMoreMenu(false); }}
+            style={{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"13px 14px", background:tab===key?C.pri+"10":"#fff", border:`1.5px solid ${tab===key?C.pri+"33":"#E8ECF5"}`, borderRadius:12, marginBottom:8, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}
+          >
+            <Icon size={17} color={tab===key?C.pri:C.muted} strokeWidth={tab===key?2.5:1.8} />
+            <span style={{ fontSize:14, fontWeight:800, color:tab===key?C.pri:C.text }}>{label}</span>
+          </button>
+        ))}
+      </BottomSheet>
+
+      <BottomNav tabs={OWNER_BOTTOM_TABS} active={isMoreTab ? "more" : tab} onChange={onOwnerNavChange} />
     </div>
   );
 }

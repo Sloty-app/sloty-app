@@ -1,5 +1,5 @@
 import { useState, useEffect, useId } from "react";
-import { Home, Search, BookOpen, User, ArrowLeft, CheckCircle, AlertCircle, X, MapPin, LocateFixed, Star } from "lucide-react";
+import { Home, Search, BookOpen, User, ArrowLeft, CheckCircle, AlertCircle, X, MapPin, LocateFixed, Star, LayoutDashboard, ListOrdered, MessageCircle, MoreHorizontal } from "lucide-react";
 import { C } from "../constants";
 
 const MAPS_KEY = import.meta.env.VITE_MAPS_KEY || "";
@@ -112,10 +112,14 @@ export function TopBar({ title, sub, onBack, dark=false, right }) {
 }
 
 const NAV_ICONS = {
-  home:     { Icon: Home,     label:"Home"     },
-  explore:  { Icon: Search,   label:"Explore"  },
-  bookings: { Icon: BookOpen, label:"Bookings" },
-  profile:  { Icon: User,     label:"Profile"  },
+  home:      { Icon: Home,           label:"Home"     },
+  explore:   { Icon: Search,         label:"Explore"  },
+  bookings:  { Icon: BookOpen,       label:"Bookings" },
+  profile:   { Icon: User,           label:"Profile"  },
+  dashboard: { Icon: LayoutDashboard, label:"Dashboard" },
+  queue:     { Icon: ListOrdered,     label:"Queue"     },
+  messages:  { Icon: MessageCircle,   label:"Messages"  },
+  more:      { Icon: MoreHorizontal,  label:"More"      },
 };
 
 export function BottomNav({ tabs, active, onChange }) {
