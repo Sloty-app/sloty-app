@@ -438,8 +438,29 @@ function OwnerSettings({ myStore, onUpdate, user }) {
     <TimeInput12h label={label} value={value} onChange={(v) => onChange({ target: { value: v } })} />
   );
 
+  // Settings used to be one long scroll through 8 sections — Email,
+  // Store Info, Location, Photos, Hours, Services (one full card per
+  // service), Staff, Help — which got especially long for a store with
+  // many services. Grouped into 4 sub-tabs instead, same seg-tabs
+  // pattern the customer store-detail page already uses, so only one
+  // group's cards render at a time.
+  const [settingsSection, setSettingsSection] = useState("account");
+  const SETTINGS_SECTIONS = [
+    ["account",  "Account"],
+    ["store",    "Store"],
+    ["services", "Services"],
+    ["support",  "Support"],
+  ];
+
   return (
     <div>
+      <div className="seg-tabs" style={{ marginBottom:16 }}>
+        {SETTINGS_SECTIONS.map(([k,label]) => (
+          <button key={k} className={settingsSection===k?"active":undefined} onClick={() => setSettingsSection(k)}>{label}</button>
+        ))}
+      </div>
+
+      {settingsSection === "account" && (
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <SectionHeader icon={Mail} title="Your Email" />
@@ -456,7 +477,10 @@ function OwnerSettings({ myStore, onUpdate, user }) {
         </LockableSection>
         <SectionSaveButton status={emailStatus} disabled={!editingEmail} onSave={saveEmail} />
       </Card>
+      )}
 
+      {settingsSection === "store" && (
+      <>
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <SectionHeader icon={Store} title="Store Info" />
@@ -532,7 +556,11 @@ function OwnerSettings({ myStore, onUpdate, user }) {
           })}
         />
       </Card>
+      </>
+      )}
 
+      {settingsSection === "services" && (
+      <>
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <SectionHeader icon={Wrench} title="Services" />
@@ -596,7 +624,10 @@ function OwnerSettings({ myStore, onUpdate, user }) {
           if (hasStaff && staff.some(s=>!s.name)) return "Please name every staff member, or remove the empty one";
         })}
       />
+      </>
+      )}
 
+      {settingsSection === "support" && (
       <Card>
         <SectionHeader icon={MessageCircle} title="Help & Support" color={C.blue} />
         <div style={{ display:"flex", gap:8, marginBottom:14 }}>
@@ -623,6 +654,7 @@ function OwnerSettings({ myStore, onUpdate, user }) {
           <FileText size={14} /> Report a Problem
         </button>
       </Card>
+      )}
 
       <BottomSheet open={showReportForm} onClose={() => setShowReportForm(false)} title="Report a Problem">
         {reportSuccess ? (
@@ -989,6 +1021,7 @@ export default function OwnerApp() {
   const waiting       = todayBookings.filter(b=>b.status==="confirmed").length;
   const inProgress    = todayBookings.filter(b=>b.status==="in_progress").length;
   const completed     = todayBookings.filter(b=>b.status==="completed").length;
+  const noShowToday   = todayBookings.filter(b=>b.status==="no_show").length;
   const queueBookings = staffFilter==="all" ? todayBookings : todayBookings.filter(b => b.staffId === staffFilter);
 
   // Primary four live in the fixed bottom nav (same component/pattern
@@ -1345,9 +1378,10 @@ export default function OwnerApp() {
             )}
             <div style={{ display:"flex", gap:10, marginBottom:16 }}>
               {[
-                [Users,       waiting,    "Waiting",     C.red],
-                [PlayCircle,  inProgress, "In Progress", C.acc],
-                [CheckCircle, completed,  "Done",        C.green],
+                [Users,       waiting,     "Waiting",     C.red],
+                [PlayCircle,  inProgress,  "In Progress", C.acc],
+                [CheckCircle, completed,   "Done",        C.green],
+                [XCircle,     noShowToday, "No Show",     C.muted],
               ].map(([Icon,v,l,col]) => (
                 <div key={l} style={{ flex:1, background:C.card, borderRadius:14, padding:"12px 8px", textAlign:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.05)" }}>
                   <div style={{ display:"flex", justifyContent:"center", marginBottom:4 }}><Icon size={16} color={col} /></div>
@@ -1691,6 +1725,7 @@ export default function OwnerApp() {
               const bookingTotal = (b) => (b.service?.price || 0) + (b.addedServicesPaymentStatus === "paid" ? (b.addedServices || []).reduce((s,x)=>s+(x.price||0),0) : 0);
               const completed30  = history.filter(b=>b.status==="completed");
               const cancelled30  = history.filter(b=>b.status==="cancelled");
+              const noShow30     = history.filter(b=>b.status==="no_show");
               const revenue30    = completed30.reduce((s,b)=>s+bookingTotal(b),0);
               const byDate = history.reduce((acc,b) => {
                 if (!acc[b.date]) acc[b.date] = [];
@@ -1702,7 +1737,8 @@ export default function OwnerApp() {
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:20 }}>
                     <StatCard icon={CalendarDays} value={history.length}      label="Total Bookings"  color={C.blue}  />
                     <StatCard icon={CheckCircle}  value={completed30.length}  label="Completed"       color={C.green} />
-                    <StatCard icon={XCircle}      value={cancelled30.length}  label="Cancelled"       color={C.red}   />
+                    <StatCard icon={XCircle}      value={noShow30.length}     label="No Show"         color={C.muted} />
+                    <StatCard icon={Ban}          value={cancelled30.length}  label="Cancelled"       color={C.red}   />
                     <StatCard icon={TrendingUp}   value={`₹${revenue30}`}    label="30-Day Revenue"  color={C.acc}   />
                   </div>
                   <h3 style={{ fontSize:15, fontWeight:900, color:C.text, marginBottom:12 }}>Last 30 Days</h3>
