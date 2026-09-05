@@ -472,6 +472,24 @@ export default function CustomerApp() {
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [recentSearches, setRecentSearches] = useState(loadRecents);
   const [detailTab, setDetailTab] = useState("services"); // store detail: "services" | "reviews" | "info"
+  const [storeReviews, setStoreReviews] = useState([]);
+  const [reviewsPage, setReviewsPage] = useState(1);
+  const [reviewsHasMore, setReviewsHasMore] = useState(false);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  // Reviews now live behind their own paginated endpoint (getStore no
+  // longer returns them at all — see backend). Fetched once the Reviews
+  // tab is actually opened, not eagerly with the rest of the store, so
+  // browsing Services never pays for reviews nobody asked to see.
+  const fetchStoreReviews = async (storeId, page = 1) => {
+    setReviewsLoading(true);
+    try {
+      const res = await api("GET", `/stores/${storeId}/reviews?page=${page}&limit=10`);
+      setStoreReviews(prev => page === 1 ? (res.reviews||[]) : [...prev, ...(res.reviews||[])]);
+      setReviewsHasMore(!!res.hasMore);
+      setReviewsPage(page);
+    } catch (e) { /* non-critical */ }
+    finally { setReviewsLoading(false); }
+  };
   const searchPrompt = useRotatingPlaceholder(SEARCH_PROMPTS);
   // Commits a search: remembers it (max 6, most recent first), then
   // jumps to the results screen. Used by Enter, suggestions, recents
@@ -610,7 +628,7 @@ export default function CustomerApp() {
   // of a fresh inline arrow function at each of the three render sites,
   // so memoized cards don't re-render just because this prop identity
   // changed on every parent render.
-  const handleSelectStore = useCallback((s) => { setSelStore(s); setDetailTab("services"); setScreen("detail"); }, []);
+  const handleSelectStore = useCallback((s) => { setSelStore(s); setDetailTab("services"); setStoreReviews([]); setReviewsPage(1); setReviewsHasMore(false); setScreen("detail"); }, []);
 
   const openBooking = useCallback((store) => {
     setSelStore(store);
@@ -2173,7 +2191,7 @@ export default function CustomerApp() {
         {/* Services / Reviews / Info */}
         <div className="seg-tabs" style={{ marginBottom:14 }}>
           {[["services","Services"],["reviews",`Reviews${selStore.totalReviews?` (${selStore.totalReviews})`:""}`],["info","Info"]].map(([k,label]) => (
-            <button key={k} className={detailTab===k?"active":undefined} onClick={() => setDetailTab(k)}>{label}</button>
+            <button key={k} className={detailTab===k?"active":undefined} onClick={() => { setDetailTab(k); if (k==="reviews" && storeReviews.length===0 && !reviewsLoading) fetchStoreReviews(selStore._id, 1); }}>{label}</button>
           ))}
         </div>
 
@@ -2235,23 +2253,34 @@ export default function CustomerApp() {
                   <p style={{ fontSize:11, color:C.muted, marginTop:2 }}>From customers who booked through Sloty and completed their visit.</p>
                 </div>
               </div>
-              {selStore.reviews?.length > 0 ? [...selStore.reviews].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map((r,i,arr) => (
-                <div key={i} style={{ paddingBottom:12, marginBottom:12, borderBottom: i<arr.length-1?"1px solid #F0F2F8":"none" }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      <div style={{ width:30, height:30, borderRadius:"50%", background:C.pri+"22", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:900, color:C.pri }}>
-                        {(r.name||"U").charAt(0).toUpperCase()}
+              {reviewsLoading && storeReviews.length===0 ? (
+                <Loader skeleton />
+              ) : storeReviews.length > 0 ? (
+                <>
+                  {storeReviews.map((r,i) => (
+                    <div key={r._id||i} style={{ paddingBottom:12, marginBottom:12, borderBottom: i<storeReviews.length-1?"1px solid #F0F2F8":"none" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <div style={{ width:30, height:30, borderRadius:"50%", background:C.pri+"22", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:900, color:C.pri }}>
+                            {(r.name||"U").charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p style={{ fontSize:13, fontWeight:800, color:C.text }}>{r.name||"Customer"}</p>
+                            {r.createdAt && <p style={{ fontSize:10, color:C.muted }}>{new Date(r.createdAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>}
+                          </div>
+                        </div>
+                        <RatingPill rating={r.rating} />
                       </div>
-                      <div>
-                        <p style={{ fontSize:13, fontWeight:800, color:C.text }}>{r.name||"Customer"}</p>
-                        {r.createdAt && <p style={{ fontSize:10, color:C.muted }}>{new Date(r.createdAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>}
-                      </div>
+                      {r.comment && <p style={{ fontSize:12.5, color:"#3A4256", marginLeft:38, lineHeight:1.55 }}>{r.comment}</p>}
                     </div>
-                    <RatingPill rating={r.rating} />
-                  </div>
-                  {r.comment && <p style={{ fontSize:12.5, color:"#3A4256", marginLeft:38, lineHeight:1.55 }}>{r.comment}</p>}
-                </div>
-              )) : (
+                  ))}
+                  {reviewsHasMore && (
+                    <button onClick={() => fetchStoreReviews(selStore._id, reviewsPage+1)} disabled={reviewsLoading} style={{ width:"100%", padding:"11px", background:"#F3F4F9", color:C.text, border:"none", borderRadius:12, fontWeight:800, fontSize:13, cursor:reviewsLoading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif" }}>
+                      {reviewsLoading ? "Loading..." : "Show more reviews"}
+                    </button>
+                  )}
+                </>
+              ) : (
                 <p style={{ fontSize:12, color:C.muted, textAlign:"center", padding:"8px 0" }}>No reviews yet — be the first after your visit!</p>
               )}
             </Card>

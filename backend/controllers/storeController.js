@@ -1,4 +1,5 @@
 // controllers/storeController.js
+const mongoose = require("mongoose");
 const Store = require("../models/Store");
 const User  = require("../models/User");
 const { sendEmail, emailTemplates } = require("../config/mailer");
@@ -13,7 +14,13 @@ exports.getStores = async (req, res) => {
     if (search)   filter.name = new RegExp(search, "i");
     if (rating)   filter.rating = { $gte: Number(rating) };
 
-    let stores = await Store.find(filter).populate("owner","name phone").sort({ rating:-1 }).lean();
+    // Excludes reviews — this is the Home/Explore list, loaded far more
+    // often than any single store's detail page, and only ever shows
+    // the aggregate rating/totalReviews numbers, never review text.
+    // Without this, every store's full (and ever-growing) reviews array
+    // shipped on every list load regardless of whether anyone opens a
+    // store's Reviews tab.
+    let stores = await Store.find(filter).select("-reviews").populate("owner","name phone").sort({ rating:-1 }).lean();
 
     // Nearest-first: only kicks in when the customer's location is passed.
     // Stores without a saved location are pushed to the end, not dropped.
@@ -40,11 +47,52 @@ exports.getStores = async (req, res) => {
 };
 
 // GET /api/stores/:id — Public: Single store (must be approved)
+// Excludes reviews — the detail page's Reviews tab shows a handful at
+// a time via getStoreReviews below, so there's no reason for a store
+// with hundreds of reviews to ship every one of them just to render
+// the Services tab (the page customers land on first).
 exports.getStore = async (req, res) => {
   try {
-    const store = await Store.findOne({ _id:req.params.id, isApproved:true }).populate("owner","name phone");
+    const store = await Store.findOne({ _id:req.params.id, isApproved:true }).select("-reviews").populate("owner","name phone");
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
     res.status(200).json({ success:true, store });
+  } catch (err) {
+    res.status(500).json({ success:false, message:"Server error" });
+  }
+};
+
+// GET /api/stores/:id/reviews?page=&limit= — Public: paginated reviews,
+// most recent first, for the detail page's Reviews tab. Reviews are
+// appended in submission order, so "most recent" means slicing from
+// the END of the array — done here with $reverseArray + $slice inside
+// an aggregation pipeline (the plain query-projection $slice only
+// takes literal skip/limit and always counts from the front) so
+// MongoDB does the reversing and paging itself and only the one
+// requested page ever leaves the database, not the whole array.
+exports.getStoreReviews = async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 10, 30);
+    const page  = Math.max(Number(req.query.page) || 1, 1);
+    const skip  = (page - 1) * limit;
+
+    let storeObjectId;
+    try { storeObjectId = new mongoose.Types.ObjectId(req.params.id); }
+    catch { return res.status(400).json({ success:false, message:"Invalid store id" }); }
+
+    const [store] = await Store.aggregate([
+      { $match: { _id: storeObjectId, isApproved: true } },
+      { $project: {
+          rating: 1,
+          totalReviews: 1,
+          reviews: { $slice: [{ $reverseArray: "$reviews" }, skip, limit] },
+      }},
+    ]);
+    if (!store) return res.status(404).json({ success:false, message:"Store not found" });
+
+    res.status(200).json({
+      success:true, reviews: store.reviews || [], rating: store.rating, totalReviews: store.totalReviews,
+      page, hasMore: skip + limit < (store.totalReviews || 0),
+    });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }
@@ -268,10 +316,23 @@ exports.addReview = async (req, res) => {
     const alreadyReviewed = store.reviews.find(r=>r.user.toString()===req.user.id);
     if (alreadyReviewed) return res.status(400).json({ success:false, message:"You already reviewed this store" });
     store.reviews.push({ user:req.user.id, name:req.user.name, rating, comment });
-    store.totalReviews = store.reviews.length;
-    store.rating = +(store.reviews.reduce((a,r)=>a+r.rating,0)/store.reviews.length).toFixed(1);
+    // ratingSum is a running total backing the average — updating it
+    // with plain arithmetic means the new average never needs to
+    // re-reduce the whole (and only ever growing) reviews array. Stores
+    // that predate this field have ratingSum unset (not defaulted to
+    // 0 — see the schema comment), so the first review after this
+    // change reconstructs it once from the existing rating*totalReviews
+    // instead of silently discarding every review that came before it.
+    const priorSum = store.ratingSum ?? (store.rating * store.totalReviews);
+    store.ratingSum = priorSum + rating;
+    store.totalReviews += 1;
+    store.rating = +(store.ratingSum / store.totalReviews).toFixed(1);
     await store.save();
-    res.status(200).json({ success:true, message:"Review added! Thank you ⭐", store });
+    // Reviews left off the response on purpose — the client already
+    // has the review it just submitted; there's no reason to also ship
+    // every other review back just to confirm one write succeeded.
+    const { reviews, ...storeWithoutReviews } = store.toObject();
+    res.status(200).json({ success:true, message:"Review added! Thank you ⭐", store: storeWithoutReviews });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }

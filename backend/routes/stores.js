@@ -1,7 +1,7 @@
 // routes/stores.js
 const router = require("express").Router();
 const {
-  getStores, getStore, createStore, updateStore,
+  getStores, getStore, getStoreReviews, createStore, updateStore,
   getMyStore, approveStore, rejectStore,
   getPendingStores, getAllStores, toggleOpen, addReview, getStoreAnalytics, removeStore, restoreStore,
 } = require("../controllers/storeController");
@@ -21,6 +21,7 @@ router.put("/admin/:id/restore",   protect, authorize("admin"), restoreStore);
 router.get("/admin/all",     protect, authorize("admin"), getAllStores);
 
 router.get("/:id", getStore);
+router.get("/:id/reviews", getStoreReviews);
 
 // ── OWNER ──────────────────────────────────────────────────
 router.post("/",               protect, authorize("owner","admin"), createStore);

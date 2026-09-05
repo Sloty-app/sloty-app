@@ -111,6 +111,14 @@ const StoreSchema = new mongoose.Schema({
   rating:       { type: Number, default: 0 },
   totalReviews: { type: Number, default: 0 },
   totalBookings:{ type: Number, default: 0 },
+  // Running sum backing `rating` — lets a new review update the average
+  // with plain arithmetic (sum + newRating) / (count + 1) instead of
+  // re-reducing the entire reviews array on every submission. Left
+  // unset (not defaulted to 0) specifically so existing stores that
+  // predate this field can be told apart from a genuinely new store —
+  // see addReview, which reconstructs it once from rating*totalReviews
+  // the first time a store with this field missing gets reviewed again.
+  ratingSum:    { type: Number, default: null },
 
   photos:  [{ type: String }],
   reviews: [ReviewSchema],
