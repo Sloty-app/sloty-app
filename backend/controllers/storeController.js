@@ -350,34 +350,52 @@ exports.getStoreAnalytics = async (req, res) => {
     const store = await Store.findById(req.params.id).populate("owner", "name email phone");
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
 
-    const bookings = await Booking.find({ store: req.params.id });
-
-    const completed   = bookings.filter(b => b.status === "completed");
-    const cancelled   = bookings.filter(b => b.status === "cancelled");
-    const noShow      = bookings.filter(b => b.status === "no_show");
-    const confirmed   = bookings.filter(b => b.status === "confirmed");
-
     // A booking's real, realized revenue — original price plus any
     // add-on services, but only counting add-ons actually marked paid
     // (an unpaid add-on hasn't been collected yet, so shouldn't inflate
     // reported revenue ahead of when the store genuinely receives it).
-    const bookingTotal = (b) => (b.service?.price || 0) + (b.addedServicesPaymentStatus === "paid" ? (b.addedServices || []).reduce((s,x)=>s+(x.price||0),0) : 0);
-
-    const totalRevenue = completed.reduce((sum, b) => sum + bookingTotal(b), 0);
-
-    // Last 30 days revenue, for a "recent performance" signal separate
-    // from all-time totals.
+    // Same rule as before, just expressed as a Mongo aggregation
+    // expression instead of a JS function, so it runs once per matching
+    // document inside the database instead of after pulling every
+    // booking this store has ever had into the app to filter/reduce
+    // over in JS — that used to mean loading a store's entire, only
+    // ever growing history on every single analytics view.
+    const bookingTotalExpr = {
+      $add: [
+        { $ifNull: ["$service.price", 0] },
+        { $cond: [
+            { $eq: ["$addedServicesPaymentStatus", "paid"] },
+            { $sum: { $map: { input: { $ifNull: ["$addedServices", []] }, as: "x", in: { $ifNull: ["$$x.price", 0] } } } },
+            0,
+        ]},
+      ],
+    };
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const recentCompleted = completed.filter(b => new Date(b.createdAt) >= thirtyDaysAgo);
-    const recentRevenue = recentCompleted.reduce((sum, b) => sum + bookingTotal(b), 0);
 
-    const recentBookings = [...bookings]
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 10)
-      .map(b => ({
-        _id: b._id, customerName: b.customerName, service: b.service?.name,
-        price: b.service?.price, date: b.date, timeSlot: b.timeSlot, status: b.status,
-      }));
+    const [agg] = await Booking.aggregate([
+      { $match: { store: new mongoose.Types.ObjectId(req.params.id) } },
+      { $facet: {
+          totalCount:   [{ $count: "n" }],
+          statusCounts: [{ $group: { _id: "$status", n: { $sum: 1 } } }],
+          revenue:      [
+            { $match: { status: "completed" } },
+            { $group: { _id: null, totalRevenue: { $sum: bookingTotalExpr }, completedCount: { $sum: 1 } } },
+          ],
+          recent: [
+            { $match: { status: "completed", createdAt: { $gte: thirtyDaysAgo } } },
+            { $group: { _id: null, recentRevenue: { $sum: bookingTotalExpr }, recentBookingsCount: { $sum: 1 } } },
+          ],
+          recentBookings: [
+            { $sort: { createdAt: -1 } },
+            { $limit: 10 },
+            { $project: { customerName:1, service:1, date:1, timeSlot:1, status:1 } },
+          ],
+      }},
+    ]);
+
+    const statusCount = (name) => agg.statusCounts.find(s => s._id === name)?.n || 0;
+    const totalRevenue = agg.revenue[0]?.totalRevenue || 0;
+    const completedCount = agg.revenue[0]?.completedCount || 0;
 
     res.status(200).json({
       success: true,
@@ -390,17 +408,20 @@ exports.getStoreAnalytics = async (req, res) => {
         owner: store.owner,
       },
       stats: {
-        totalBookings: bookings.length,
-        completed: completed.length,
-        cancelled: cancelled.length,
-        noShow: noShow.length,
-        confirmed: confirmed.length,
+        totalBookings: agg.totalCount[0]?.n || 0,
+        completed: completedCount,
+        cancelled: statusCount("cancelled"),
+        noShow:    statusCount("no_show"),
+        confirmed: statusCount("confirmed"),
         totalRevenue,
-        recentRevenue,
-        recentBookingsCount: recentCompleted.length,
-        avgBookingValue: completed.length ? Math.round(totalRevenue / completed.length) : 0,
+        recentRevenue: agg.recent[0]?.recentRevenue || 0,
+        recentBookingsCount: agg.recent[0]?.recentBookingsCount || 0,
+        avgBookingValue: completedCount ? Math.round(totalRevenue / completedCount) : 0,
       },
-      recentBookings,
+      recentBookings: agg.recentBookings.map(b => ({
+        _id: b._id, customerName: b.customerName, service: b.service?.name,
+        price: b.service?.price, date: b.date, timeSlot: b.timeSlot, status: b.status,
+      })),
     });
   } catch (err) {
     console.error("getStoreAnalytics error:", err.message);

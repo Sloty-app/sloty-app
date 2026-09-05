@@ -158,68 +158,109 @@ exports.getCustomersOverview = async (req, res) => {
 
     const userFilter = { role: "customer" };
     if (search.trim()) {
-      const re = new RegExp(search.trim(), "i");
+      // Escaped so a search string containing regex metacharacters
+      // (e.g. a phone number with a "+", or any of . * + ? ( ) etc.)
+      // is matched literally instead of being interpreted as a pattern.
+      const re = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       userFilter.$or = [{ name: re }, { phone: re }, { email: re }];
     }
 
-    const totalCustomers = await User.countDocuments(userFilter);
+    const sortStage =
+      sort === "spent"  ? { totalSpent:    -1 } :
+      sort === "recent" ? { joinedAt:      -1 } :
+                          { totalBookings: -1 }; // default: most active first
 
-    const bookingStats = await Booking.aggregate([
-      { $group: {
-        _id: "$customer",
-        totalBookings: { $sum: 1 },
-        completed:  { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
-        cancelled:  { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
-        noShow:     { $sum: { $cond: [{ $eq: ["$status", "no_show"] }, 1, 0] } },
-        totalSpent: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, "$service.price", 0] } },
-        lastBookingAt: { $max: "$createdAt" },
-      } },
+    // Global totals are deliberately NOT scoped to the search box —
+    // matches the previous behaviour, where the summary row stayed a
+    // platform-wide figure while only the list beneath it responded to
+    // search. Computed once, in the database, instead of loading every
+    // booking ever made (system-wide) into Node to reduce over — the
+    // part of the old code that scaled worst, since it re-ran in full
+    // on every single page load of this screen regardless of search or
+    // pagination.
+    const [totalCustomers, [globalStats], [pipelineResult]] = await Promise.all([
+      User.countDocuments(userFilter),
+      Booking.aggregate([
+        { $group: {
+            _id: "$customer",
+            totalBookings: { $sum: 1 },
+            totalSpent: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, "$service.price", 0] } },
+        } },
+        { $group: {
+            _id: null,
+            activeCustomers: { $sum: 1 }, // one group row per distinct customer with >=1 booking
+            totalBookingsAll: { $sum: "$totalBookings" },
+            totalSpentAll: { $sum: "$totalSpent" },
+        } },
+      ]),
+      // Per-customer stats, joined and paginated entirely in the
+      // database — replaces fetching every matching user, building a
+      // JS Map of every booking grouped by customer, and sorting/
+      // slicing the merged result in Node.
+      User.aggregate([
+        { $match: userFilter },
+        { $lookup: {
+            from: Booking.collection.name,
+            let: { uid: "$_id" },
+            pipeline: [
+              { $match: { $expr: { $eq: ["$customer", "$$uid"] } } },
+              { $group: {
+                  _id: null,
+                  totalBookings: { $sum: 1 },
+                  completed:  { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+                  cancelled:  { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
+                  noShow:     { $sum: { $cond: [{ $eq: ["$status", "no_show"] }, 1, 0] } },
+                  totalSpent: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, "$service.price", 0] } },
+                  lastBookingAt: { $max: "$createdAt" },
+              } },
+            ],
+            as: "stats",
+        } },
+        { $addFields: { stats: { $ifNull: [{ $arrayElemAt: ["$stats", 0] }, {}] } } },
+        { $project: {
+            name:1, phone:1, email:1, city:1, area:1, isActive:1, walletBalance:1, referralCount:1,
+            joinedAt: "$createdAt",
+            totalBookings: { $ifNull: ["$stats.totalBookings", 0] },
+            completed:     { $ifNull: ["$stats.completed", 0] },
+            cancelled:     { $ifNull: ["$stats.cancelled", 0] },
+            noShow:        { $ifNull: ["$stats.noShow", 0] },
+            totalSpent:    { $ifNull: ["$stats.totalSpent", 0] },
+            lastBookingAt: { $ifNull: ["$stats.lastBookingAt", null] },
+        } },
+        { $facet: {
+            paged: [
+              { $sort: sortStage },
+              { $skip: (page - 1) * limit },
+              { $limit: limit },
+            ],
+            totalCount: [{ $count: "n" }],
+        } },
+      ]),
     ]);
-    const statsMap = new Map(bookingStats.map(s => [s._id.toString(), s]));
 
-    const users = await User.find(userFilter)
-      .select("name phone email city area createdAt walletBalance referralCount isActive")
-      .lean();
-
-    let customers = users.map(u => {
-      const s = statsMap.get(u._id.toString());
-      return {
-        _id: u._id, name: u.name, phone: u.phone, email: u.email,
-        city: u.city, area: u.area, joinedAt: u.createdAt, isActive: u.isActive,
-        walletBalance: u.walletBalance, referralCount: u.referralCount,
-        totalBookings: s?.totalBookings || 0,
-        completed:     s?.completed || 0,
-        cancelled:     s?.cancelled || 0,
-        noShow:        s?.noShow || 0,
-        totalSpent:    s?.totalSpent || 0,
-        lastBookingAt: s?.lastBookingAt || null,
-      };
-    });
-
-    customers.sort((a, b) => {
-      if (sort === "spent")  return b.totalSpent - a.totalSpent;
-      if (sort === "recent") return new Date(b.joinedAt) - new Date(a.joinedAt);
-      return b.totalBookings - a.totalBookings; // default: most active first
-    });
-
-    const totalBookingsAllCustomers = bookingStats.reduce((sum, s) => sum + s.totalBookings, 0);
-    const totalSpentAllCustomers    = bookingStats.reduce((sum, s) => sum + s.totalSpent, 0);
-
-    const start = (page - 1) * limit;
-    const paged = customers.slice(start, start + limit);
+    const customers = (pipelineResult?.paged || []).map(u => ({
+      _id: u._id, name: u.name, phone: u.phone, email: u.email,
+      city: u.city, area: u.area, joinedAt: u.joinedAt, isActive: u.isActive,
+      walletBalance: u.walletBalance, referralCount: u.referralCount,
+      totalBookings: u.totalBookings, completed: u.completed, cancelled: u.cancelled,
+      noShow: u.noShow, totalSpent: u.totalSpent, lastBookingAt: u.lastBookingAt,
+    }));
+    const matchedCount = pipelineResult?.totalCount?.[0]?.n || 0;
+    const totalBookingsAllCustomers = globalStats?.totalBookingsAll || 0;
+    const totalSpentAllCustomers    = globalStats?.totalSpentAll || 0;
 
     res.status(200).json({
       success: true,
       totals: {
         totalCustomers,
-        activeCustomers: bookingStats.length, // customers with at least one booking
+        activeCustomers: globalStats?.activeCustomers || 0,
         totalBookings: totalBookingsAllCustomers,
         totalSpent: totalSpentAllCustomers,
         avgBookingsPerCustomer: totalCustomers ? +(totalBookingsAllCustomers / totalCustomers).toFixed(1) : 0,
       },
-      count: customers.length,
+      count: matchedCount,
       page, limit,
-      customers: paged,
+      customers,
     });
   } catch (err) {
     console.error("getCustomersOverview error:", err.message);
