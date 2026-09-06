@@ -6,11 +6,16 @@ export default function Splash() {
   const navigate = useNavigate();
 
   // Admin intentionally has no card here — accessed only via a direct
-  // URL (/auth/admin), never shown publicly. Customer and Owner now
-  // get EQUALLY strong, vibrant treatment — previously Owner was a
-  // dim, semi-transparent card next to Customer's bold gradient,
-  // which unintentionally made Owner feel like an afterthought rather
-  // than an equally attractive path.
+  // URL (/auth/admin), never shown publicly. Customer and Owner get
+  // equally strong, vibrant treatment. Owner previously used an
+  // unrelated teal/green gradient (borrowed from the semantic
+  // "success" color used elsewhere) sitting right next to Customer's
+  // magenta-pink — two unrelated hues plus the dark violet page
+  // background made three different color families fight for
+  // attention. Owner now uses a warm gold gradient instead — the same
+  // accent already used for the admin/business side of the app
+  // elsewhere — which reads as "business/premium" and sits calmly
+  // against dark violet instead of clashing with Customer's pink.
   const roles = [
     {
       role:"customer",
@@ -25,8 +30,8 @@ export default function Splash() {
       Icon:Store,
       label:"I'm a Store Owner",
       sub:"Manage bookings, grow your business",
-      bg:"linear-gradient(100deg,#00C9A7,#00A887)",
-      shadow:"0 10px 30px rgba(0,201,167,0.35)",
+      bg:"linear-gradient(100deg,#F5A623,#B45F06)",
+      shadow:"0 10px 30px rgba(245,166,35,0.35)",
     },
   ];
 
