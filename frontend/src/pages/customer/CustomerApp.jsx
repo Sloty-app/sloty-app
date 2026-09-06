@@ -2569,62 +2569,110 @@ export default function CustomerApp() {
   );
 
   // ── Confirmed ─────────────────────────────────────────────────────────────
-  if (screen==="confirmed" && confirmed) return (
-    <div style={{ minHeight:"100vh", background:`linear-gradient(160deg,${C.sec},#2D1B4E)`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, fontFamily:"'Nunito',sans-serif", textAlign:"center" }}>
-      <div style={{ position:"relative", width:110, height:110, display:"flex", alignItems:"center", justifyContent:"center", marginBottom:20 }}>
+  // Redesigned as a single "digital ticket" card — the boarding-pass /
+  // movie-ticket pattern (BookMyShow, airline apps): one card with a
+  // perforated divider separating "what you booked" from the token/OTP
+  // stub, instead of the token and OTP floating as two disconnected
+  // translucent boxes that never actually said which store or when.
+  if (screen==="confirmed" && confirmed) {
+    const ticketCat = getCat(confirmed.store?.category);
+    const TicketCatIcon = ticketCat.Icon;
+    const ticketDate = confirmed.date
+      ? new Date(`${confirmed.date}T00:00:00`).toLocaleDateString("en-IN", { weekday:"short", day:"numeric", month:"short" })
+      : "";
+    return (
+    <div style={{ minHeight:"100vh", background:`linear-gradient(160deg,${C.sec},#2D1B4E)`, display:"flex", flexDirection:"column", alignItems:"center", padding:"36px 24px 28px", fontFamily:"'Nunito',sans-serif", textAlign:"center", overflowY:"auto" }}>
+      <div style={{ position:"relative", width:96, height:96, display:"flex", alignItems:"center", justifyContent:"center", marginBottom:16, flexShrink:0 }}>
         <div style={{ position:"absolute", inset:0, borderRadius:"50%", border:`3px solid ${C.green}`, animation:"successRing 1.4s ease-out 0.3s infinite" }} />
-        <div style={{ width:96, height:96, borderRadius:"50%", background:`linear-gradient(135deg, ${C.green}, #00A887)`, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 8px 28px ${C.green}66`, animation:"successPop 0.6s cubic-bezier(0.34,1.56,0.64,1)" }}>
-          <CheckCircle size={58} color="#fff" strokeWidth={2.5} />
+        <div style={{ width:82, height:82, borderRadius:"50%", background:`linear-gradient(135deg, ${C.green}, #00A887)`, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 8px 28px ${C.green}66`, animation:"successPop 0.6s cubic-bezier(0.34,1.56,0.64,1)" }}>
+          <CheckCircle size={48} color="#fff" strokeWidth={2.5} />
         </div>
       </div>
-      <h2 style={{ fontSize:28, fontWeight:900, color:"#fff", marginBottom:6 }}>Slot Confirmed!</h2>
-      <p style={{ fontSize:14, color:"rgba(255,255,255,0.6)", marginBottom:confirmed.staffName?6:28 }}>No more standing in queues!</p>
-      {confirmed.staffName && (
-        <p style={{ fontSize:13, color:C.acc, fontWeight:800, marginBottom:confirmed.serviceBreakdown?.length>1?12:22 }}>with {confirmed.staffName}</p>
-      )}
-      {confirmed.serviceBreakdown?.length > 1 && (
-        <div style={{ background:"rgba(255,255,255,0.08)", borderRadius:14, padding:"10px 16px", marginBottom:20, width:"100%" }}>
-          {confirmed.serviceBreakdown.map((s,i) => (
-            <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0" }}>
-              <span style={{ fontSize:12, color:"rgba(255,255,255,0.7)" }}>{s.name}</span>
-              <span style={{ fontSize:12, color:"rgba(255,255,255,0.7)" }}>₹{s.price}</span>
+      <h2 style={{ fontSize:24, fontWeight:900, color:"#fff", marginBottom:4 }}>Slot Confirmed!</h2>
+      <p style={{ fontSize:13, color:"rgba(255,255,255,0.6)", marginBottom:20 }}>No more standing in queues!</p>
+
+      {/* Ticket card */}
+      <div style={{ width:"100%", maxWidth:360, background:"#fff", borderRadius:24, boxShadow:"0 20px 50px rgba(0,0,0,0.35)", marginBottom:20, overflow:"hidden" }}>
+        <div style={{ padding:"20px 22px 18px", textAlign:"left" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
+            <div style={{ width:44, height:44, borderRadius:14, background:ticketCat.color+"18", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <TicketCatIcon size={22} color={ticketCat.color} />
             </div>
-          ))}
+            <div style={{ minWidth:0, flex:1 }}>
+              <p style={{ fontSize:15, fontWeight:900, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{confirmed.store?.name}</p>
+              <p style={{ fontSize:12, color:C.muted, fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                {confirmed.service?.name}{confirmed.staffName?` · ${confirmed.staffName}`:""}
+              </p>
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:16 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <Calendar size={13} color={C.muted} />
+              <span style={{ fontSize:12, fontWeight:800, color:C.text }}>{ticketDate}</span>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <Clock size={13} color={C.muted} />
+              <span style={{ fontSize:12, fontWeight:800, color:C.text }}>{confirmed.timeSlot}</span>
+            </div>
+          </div>
+          {confirmed.serviceBreakdown?.length > 1 && (
+            <div style={{ marginTop:14, paddingTop:14, borderTop:"1.5px solid #F0F2F8" }}>
+              {confirmed.serviceBreakdown.map((s,i) => (
+                <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"3px 0" }}>
+                  <span style={{ fontSize:12, color:C.muted, fontWeight:700 }}>{s.name}</span>
+                  <span style={{ fontSize:12, color:C.muted, fontWeight:700 }}>₹{s.price}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-      <div style={{ background:`linear-gradient(135deg,${C.pri},#E0406A)`, borderRadius:24, padding:"20px 50px", marginBottom:20, boxShadow:`0 8px 32px ${C.pri}44`, width:"100%" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, marginBottom:6 }}>
-          <Ticket size={14} color="rgba(255,255,255,0.7)" />
-          <p style={{ color:"rgba(255,255,255,0.7)", fontSize:10, letterSpacing:3 }}>YOUR TOKEN</p>
+
+        {/* Perforated divider with cut-out notches, like a boarding pass stub */}
+        <div style={{ position:"relative", borderTop:"2px dashed #E0E4EF" }}>
+          <div style={{ position:"absolute", left:-13, top:-13, width:26, height:26, borderRadius:"50%", background:"#211935" }} />
+          <div style={{ position:"absolute", right:-13, top:-13, width:26, height:26, borderRadius:"50%", background:"#211935" }} />
         </div>
-        <p style={{ color:"#fff", fontSize:60, fontWeight:900, lineHeight:1 }}>{confirmed.tokenNumber}</p>
+
+        <div style={{ display:"flex" }}>
+          <div style={{ flex:1, padding:"18px 10px", textAlign:"center", borderRight:"2px dashed #E0E4EF" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:5, marginBottom:6 }}>
+              <Ticket size={12} color={C.muted} />
+              <p style={{ fontSize:10, letterSpacing:2, color:C.muted, fontWeight:800 }}>TOKEN</p>
+            </div>
+            <p style={{ fontSize:34, fontWeight:900, color:C.pri, lineHeight:1 }}>{confirmed.tokenNumber}</p>
+          </div>
+          <div style={{ flex:1, padding:"18px 10px", textAlign:"center" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:5, marginBottom:6 }}>
+              <Shield size={12} color={C.muted} />
+              <p style={{ fontSize:10, letterSpacing:2, color:C.muted, fontWeight:800 }}>OTP</p>
+            </div>
+            <p style={{ fontSize:24, fontWeight:900, color:C.text, letterSpacing:4, lineHeight:1 }}>{confirmed.otp}</p>
+          </div>
+        </div>
+        <p style={{ fontSize:11, color:C.muted, padding:"0 16px 16px", textAlign:"center" }}>Show the OTP to the shop owner to start service</p>
       </div>
-      <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:20, padding:"16px 40px", marginBottom:20, border:"2px solid rgba(255,255,255,0.2)", width:"100%" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, marginBottom:8 }}>
-          <Shield size={14} color="rgba(255,255,255,0.7)" />
-          <p style={{ color:"rgba(255,255,255,0.7)", fontSize:10, letterSpacing:3 }}>YOUR OTP</p>
-        </div>
-        <p style={{ color:"#fff", fontSize:48, fontWeight:900, lineHeight:1, letterSpacing:8 }}>{confirmed.otp}</p>
-        <p style={{ color:"rgba(255,255,255,0.5)", fontSize:11, marginTop:8 }}>Show this to the shop owner to start service</p>
-      </div>
-      <div style={{ background:"rgba(255,255,255,0.08)", borderRadius:14, padding:"12px 20px", marginBottom:20, display:"flex", gap:8, alignItems:"center", width:"100%", boxSizing:"border-box" }}>
+
+      <div style={{ background:"rgba(255,255,255,0.08)", borderRadius:14, padding:"12px 20px", marginBottom:20, display:"flex", gap:8, alignItems:"center", width:"100%", maxWidth:360, boxSizing:"border-box" }}>
         <Clock size={14} color="rgba(255,255,255,0.7)" style={{ flexShrink:0 }} />
-        <p style={{ color:"rgba(255,255,255,0.8)", fontSize:12, fontWeight:700 }}>Please arrive at least 15 minutes before your slot time</p>
+        <p style={{ color:"rgba(255,255,255,0.8)", fontSize:12, fontWeight:700, textAlign:"left" }}>Please arrive at least 15 minutes before your slot time</p>
       </div>
       {confirmed.walletDeducted > 0 && (
-        <div style={{ background:"rgba(255,255,255,0.15)", borderRadius:12, padding:"10px 16px", marginBottom:12, display:"flex", justifyContent:"space-between", alignItems:"center", width:"100%" }}>
+        <div style={{ background:"rgba(255,255,255,0.15)", borderRadius:12, padding:"10px 16px", marginBottom:12, display:"flex", justifyContent:"space-between", alignItems:"center", width:"100%", maxWidth:360, boxSizing:"border-box" }}>
           <span style={{ color:"rgba(255,255,255,0.85)", fontSize:13, fontWeight:700 }}>💰 Wallet credit applied</span>
           <span style={{ color:"#fff", fontSize:14, fontWeight:900 }}>-₹{confirmed.walletDeducted}</span>
         </div>
       )}
-      <a href={getDirectionsUrl(confirmed.store)} target="_blank" rel="noreferrer" style={{ width:"100%", textDecoration:"none", marginBottom:12 }}>
-        <div style={{ width:"100%", padding:"14px", background:"rgba(255,255,255,0.1)", border:"2px solid rgba(255,255,255,0.2)", borderRadius:14, color:"#fff", fontWeight:800, fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+      <a href={getDirectionsUrl(confirmed.store)} target="_blank" rel="noreferrer" style={{ width:"100%", maxWidth:360, textDecoration:"none", marginBottom:12 }}>
+        <div style={{ width:"100%", padding:"14px", background:"rgba(255,255,255,0.1)", border:"2px solid rgba(255,255,255,0.2)", borderRadius:14, color:"#fff", fontWeight:800, fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", gap:8, boxSizing:"border-box" }}>
           <Navigation size={16} /> Get Directions
         </div>
       </a>
-      <Btn onClick={() => {setScreen("home");setTab("home");setConfirmed(null);setSelServices([]);setSelStaff(null);setSelSlot(null);}}>Back to Home</Btn>
+      <div style={{ width:"100%", maxWidth:360 }}>
+        <Btn onClick={() => {setScreen("home");setTab("home");setConfirmed(null);setSelServices([]);setSelStaff(null);setSelSlot(null);}}>Back to Home</Btn>
+      </div>
     </div>
-  );
+    );
+  }
 
   // ── My Bookings ───────────────────────────────────────────────────────────
   if (tab==="bookings") return (
