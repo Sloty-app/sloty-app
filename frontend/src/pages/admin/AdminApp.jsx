@@ -8,7 +8,7 @@ import {
   CheckCircle, XCircle, Users, MapPin, Star,
   ClipboardList, TrendingUp, User, Circle, AlertCircle,
   MessageCircle, FileText, X, ChevronLeft, ChevronRight, Image as ImageIcon,
-  IndianRupee, Phone, CalendarDays, ArrowLeft, Search, Wallet, Ban, Gift
+  IndianRupee, Phone, CalendarDays, ArrowLeft, Search, Wallet, Ban, Gift, MoreHorizontal
 } from "lucide-react";
 
 const StatCard = ({ icon: Icon, value, label, color, onClick }) => (
@@ -514,6 +514,21 @@ export default function AdminApp() {
     { key:"support",   Icon:MessageCircle,   label:"Support"   },
   ];
 
+  // The 7-tab bar used to be a plain horizontal scroll with no fade or
+  // arrow hint at all — worse than even the owner nav's old state,
+  // since Approvals/Settlements carry pending-count badges right in
+  // their label and are exactly the tabs most likely to need attention
+  // while scrolled out of view. Same fix as the owner portal: 4
+  // frequently-checked tabs pinned in a fixed bottom nav, the other 3
+  // behind "More". Kept as a custom dark-styled bar rather than the
+  // shared (light-themed) BottomNav/BottomSheet, since AdminApp commits
+  // to its own dark "Control Center" look throughout.
+  const PRIMARY_KEYS = ["overview","approvals","stores","settlements"];
+  const primaryTabs = TABS.filter(t => PRIMARY_KEYS.includes(t.key));
+  const moreTabs    = TABS.filter(t => !PRIMARY_KEYS.includes(t.key));
+  const isMoreTab   = moreTabs.some(t => t.key === tab);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+
   const filteredCustomers = (customersData?.customers || []).filter(c => {
     const q = customerSearch.trim().toLowerCase();
     if (!q) return true;
@@ -540,17 +555,20 @@ export default function AdminApp() {
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div style={{ display:"flex", padding:"14px 16px 0", gap:8, overflowX:"auto", scrollbarWidth:"none" }}>
-        {TABS.map(({ key, Icon, label }) => (
-          <button key={key} onClick={() => setTab(key)} style={{ flexShrink:0, padding:"10px 16px", borderRadius:12, border:"none", background:tab===key?C.pri:"rgba(255,255,255,0.06)", color:tab===key?"#fff":"rgba(255,255,255,0.4)", fontWeight:800, cursor:"pointer", fontSize:12, fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:6, transition:"all 0.2s" }}>
-            <Icon size={13} color={tab===key?"#fff":"rgba(255,255,255,0.4)"} strokeWidth={tab===key?2.5:1.8} />
-            {label}
+      {/* Shown only while inside a "More" screen — the bottom nav's
+          own "More" item stays highlighted for all three, so this
+          gives back which section this actually is, plus a one-tap
+          way out. */}
+      {isMoreTab && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"14px 16px" }}>
+          <button onClick={() => setTab("overview")} style={{ background:"none", border:"none", padding:4, cursor:"pointer", display:"flex", alignItems:"center" }}>
+            <ArrowLeft size={18} color="rgba(255,255,255,0.5)" />
           </button>
-        ))}
-      </div>
+          <span style={{ fontSize:14, fontWeight:800, color:"#fff" }}>{moreTabs.find(t => t.key === tab)?.label}</span>
+        </div>
+      )}
 
-      <div style={{ padding:16 }}>
+      <div style={{ padding:"16px 16px 100px" }}>
         {loading ? <Loader text="Loading..." /> : (
           <>
             {/* ── Overview ── */}
@@ -1114,6 +1132,43 @@ export default function AdminApp() {
         </div>
         </div>
       )}
+
+      {showMoreMenu && (
+        <>
+          <div onClick={() => setShowMoreMenu(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200 }} />
+          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"min(100%, var(--app-width))", background:"#181828", borderTopLeftRadius:24, borderTopRightRadius:24, padding:"20px 16px 28px", zIndex:201 }}>
+            <div style={{ width:40, height:4, background:"rgba(255,255,255,0.15)", borderRadius:4, margin:"0 auto 16px" }} />
+            {moreTabs.map(({ key, Icon, label }) => (
+              <button
+                key={key}
+                onClick={() => { setTab(key); setShowMoreMenu(false); }}
+                style={{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"13px 14px", background:tab===key?C.pri+"22":"rgba(255,255,255,0.06)", border:`1.5px solid ${tab===key?C.pri:"transparent"}`, borderRadius:12, marginBottom:8, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}
+              >
+                <Icon size={17} color={tab===key?C.pri:"rgba(255,255,255,0.5)"} strokeWidth={tab===key?2.5:1.8} />
+                <span style={{ fontSize:14, fontWeight:800, color:tab===key?C.pri:"#fff" }}>{label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:"#181828", display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.3)", borderTopLeftRadius:24, borderTopRightRadius:24, zIndex:100 }}>
+        {[...primaryTabs, { key:"more", Icon:MoreHorizontal, label:"More", badge:0 }].map(({ key, Icon, label }) => {
+          const isActive = key==="more" ? isMoreTab : tab===key;
+          const badgeCount = key==="approvals" ? pending.length : key==="settlements" ? pendingSettlements.length : 0;
+          return (
+            <div key={key} onClick={() => key==="more" ? setShowMoreMenu(true) : setTab(key)} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3, cursor:"pointer" }}>
+              <div style={{ position:"relative", width:52, height:32, borderRadius:20, background:isActive?C.pri+"22":"transparent", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <Icon size={20} color={isActive?C.pri:"rgba(255,255,255,0.4)"} strokeWidth={isActive?2.5:1.8} />
+                {badgeCount>0 && (
+                  <span style={{ position:"absolute", top:-2, right:8, width:8, height:8, borderRadius:"50%", background:C.red, border:"2px solid #181828" }} />
+                )}
+              </div>
+              <span style={{ fontSize:10, color:isActive?C.pri:"rgba(255,255,255,0.4)", fontWeight:isActive?800:500 }}>{key==="overview"?"Overview":key==="approvals"?"Approvals":key==="stores"?"Stores":key==="settlements"?"Settlements":"More"}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
