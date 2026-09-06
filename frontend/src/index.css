@@ -95,8 +95,21 @@ html, body {
       radial-gradient(ellipse 900px 700px at 90% 85%, color-mix(in srgb, var(--green) 25%, transparent), transparent 60%),
       linear-gradient(160deg, var(--sec), #2D1B4E);
   }
+  /* The previous box-shadow here was a plain black shadow
+     (rgba(0,0,0,0.35)) — against the dark navy/purple backdrop above,
+     black-on-black reads as nothing at all, so the column just sat as
+     a flat rectangle with a hard seam against the background instead
+     of looking like an intentionally "lifted" card. Replaced with a
+     hairline light border to draw a crisp edge, a deeper black shadow
+     underneath for real grounding, and a soft violet ambient glow
+     around the whole frame — the combination is what actually reads
+     as depth against a dark backdrop, the same way product-showcase
+     pages present a floating screen with a glow, not a plain shadow. */
   .app-shell {
-    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.08),
+      0 40px 100px rgba(0, 0, 0, 0.55),
+      0 0 160px color-mix(in srgb, var(--pri) 22%, transparent);
   }
 }
 
