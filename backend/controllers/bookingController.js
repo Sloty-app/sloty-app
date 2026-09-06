@@ -425,7 +425,15 @@ exports.getStoreBookings = async (req, res) => {
     // date-filtered query (the normal case for this tab) never gets
     // close to it; it just stops an unfiltered "show everything" call
     // from pulling a store's entire multi-year history into memory.
-    const bookings = await Booking.find(filter).select("-otp").populate("customer", "name phone").sort({ date: -1, timeSlot: 1 }).limit(500).lean();
+    const bookings = await Booking.find(filter).select("-otp").populate("customer", "name phone").sort({ date: -1 }).limit(500).lean();
+    // timeSlot is a "9:00 AM" / "3:30 PM" style string — sorting it at
+    // the database level (as this used to, via `timeSlot: 1`) sorts
+    // lexicographically, not chronologically, since "1" and "3" sort
+    // before "9" as characters. That put a 9:00 AM booking AFTER a
+    // 1:00 PM and even a 3:30 PM one from the same day in the owner's
+    // Bookings list. Re-sorted here by real time-of-day within each
+    // date instead.
+    bookings.sort((a,b) => a.date !== b.date ? (a.date < b.date ? 1 : -1) : timeToMinutes(a.timeSlot) - timeToMinutes(b.timeSlot));
 
     // Lifetime visit count per customer at this store — deliberately NOT
     // limited to the date range just queried, since "is this a repeat
@@ -471,9 +479,14 @@ exports.getCustomerHistory = async (req, res) => {
 
     const bookings = await Booking.find({ store: req.params.storeId, customerPhone: req.params.phone })
       .select("-otp")
-      .sort({ date: -1, timeSlot: -1 })
+      .sort({ date: -1 })
       .limit(300) // safety cap only — no real customer has anywhere near this many visits at one store
       .lean();
+    // Same fix as getStoreBookings — timeSlot is a string ("9:00 AM"),
+    // sorting it in Mongo (as `timeSlot: -1` used to) is lexicographic,
+    // not chronological. Only matters as a tie-breaker for the rare
+    // case of the same customer having two visits on the same date.
+    bookings.sort((a,b) => a.date !== b.date ? (a.date < b.date ? 1 : -1) : timeToMinutes(b.timeSlot) - timeToMinutes(a.timeSlot));
 
     res.status(200).json({ success: true, bookings });
   } catch (err) {
@@ -511,6 +524,15 @@ exports.getLiveQueue = async (req, res) => {
     if (staffId) filter.staffId = staffId;
     const bookings = await Booking.find(filter)
       .select("tokenNumber timeSlot status customerName queuePosition staffId staffName").sort({ queuePosition:1 });
+    // Re-sort by actual appointment time, not booking-creation order —
+    // queuePosition only reflects the order slots were BOOKED in, so a
+    // customer who booked a 1:00 PM slot after someone else already had
+    // a 3:30 PM slot was being told the 3:30 PM customer was ahead of
+    // them, and the 3:30 PM customer was told they're "next in line" —
+    // backwards from who's actually served first. queuePosition still
+    // breaks ties between bookings in the same slot (pooled capacity),
+    // preserving their original booking-order there.
+    bookings.sort((a,b) => timeToMinutes(a.timeSlot) - timeToMinutes(b.timeSlot) || a.queuePosition - b.queuePosition);
     res.status(200).json({
       success:true,
       waiting:    bookings.filter(b=>b.status==="confirmed").length,
