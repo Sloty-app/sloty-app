@@ -1,117 +1,81 @@
 import { useNavigate } from "react-router-dom";
 import { C } from "../constants";
-import { User, Store, MapPin, Zap, Clock, ChevronRight } from "lucide-react";
+import { User, Store, MapPin, ChevronRight } from "lucide-react";
 
+// Previous version leaned on a dark hero gradient, blurred decorative
+// circles, glowing gradient buttons and pill badges — a combination
+// that reads as a generic landing-page template rather than something
+// designed for this specific app. Rebuilt around the light theme and
+// the light-tint icon-circle language the rest of the app already uses
+// (category chips, StatCard's colored left border) instead of
+// inventing a one-off dark/glow style just for this screen.
 export default function Splash() {
   const navigate = useNavigate();
 
   // Admin intentionally has no card here — accessed only via a direct
-  // URL (/auth/admin), never shown publicly. Customer and Owner get
-  // equally strong, vibrant treatment. Owner previously used an
-  // unrelated teal/green gradient (borrowed from the semantic
-  // "success" color used elsewhere) sitting right next to Customer's
-  // magenta-pink — two unrelated hues plus the dark violet page
-  // background made three different color families fight for
-  // attention. Owner now uses a warm gold gradient instead — the same
-  // accent already used for the admin/business side of the app
-  // elsewhere — which reads as "business/premium" and sits calmly
-  // against dark violet instead of clashing with Customer's pink.
+  // URL (/auth/admin), never shown publicly.
   const roles = [
     {
       role:"customer",
       Icon:User,
       label:"I'm a Customer",
       sub:"Book slots near you, skip the wait",
-      bg:`linear-gradient(100deg,${C.pri},#DB2777)`,
-      shadow:`0 10px 30px ${C.pri}55`,
+      color:C.pri,
     },
     {
       role:"owner",
       Icon:Store,
       label:"I'm a Store Owner",
       sub:"Manage bookings, grow your business",
-      bg:"linear-gradient(100deg,#F5A623,#B45F06)",
-      shadow:"0 10px 30px rgba(245,166,35,0.35)",
+      color:C.blue,
     },
   ];
 
-  const badges = [
-    { Icon:MapPin, label:"Made for India"   },
-    { Icon:Zap,    label:"Real-time Queue"  },
-    { Icon:Clock,  label:"Skip the Wait"    },
-  ];
-
   return (
-    <div style={{ minHeight:"100vh", background:`linear-gradient(160deg,${C.sec} 0%,#2D1B4E 100%)`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-start", padding:"14vh 28px 28px", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden" }}>
+    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"32px 24px", fontFamily:"'Nunito',sans-serif" }}>
 
-      {/* Decorative background circles */}
-      <div style={{ position:"absolute", top:-60, right:-60, width:220, height:220, borderRadius:"50%", background:"rgba(255,94,125,0.08)" }} />
-      <div style={{ position:"absolute", bottom:-40, left:-40, width:160, height:160, borderRadius:"50%", background:"rgba(162,155,254,0.06)" }} />
-      <div style={{ position:"absolute", top:"35%", left:-20, width:80,  height:80,  borderRadius:"50%", background:"rgba(255,255,255,0.03)" }} />
-
-      {/* Logo — tightened vertical footprint so the role buttons (the
-          actual thing a user needs to act on) appear sooner, without
-          needing to scroll past excess branding first. */}
-      <div style={{ textAlign:"center", marginBottom:26 }}>
-        <div style={{ width:58, height:58, borderRadius:20, background:`linear-gradient(135deg,${C.pri},#C0304A)`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 12px", boxShadow:`0 10px 32px ${C.pri}44` }}>
-          <MapPin size={28} color="#fff" strokeWidth={2} />
+      <div style={{ textAlign:"center", marginBottom:36 }}>
+        <div style={{ width:52, height:52, borderRadius:16, background:`linear-gradient(135deg,${C.pri},#C0304A)`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px" }}>
+          <MapPin size={26} color="#fff" strokeWidth={2} />
         </div>
-        <h1 style={{ fontSize:32, fontWeight:900, color:"#fff", letterSpacing:-1, marginBottom:4 }}>Sloty</h1>
-        <p style={{ fontSize:13, color:"rgba(255,255,255,0.55)", marginBottom:16 }}>Skip the wait. Book your slot.</p>
-
-        {/* Badges — bumped up opacity/size so these trust signals
-            actually register instead of nearly disappearing. */}
-        <div style={{ display:"flex", gap:8, justifyContent:"center", flexWrap:"wrap" }}>
-          {badges.map(({ Icon, label }) => (
-            <div key={label} style={{ display:"flex", alignItems:"center", gap:5, background:"rgba(255,255,255,0.1)", borderRadius:20, padding:"6px 12px", border:"1px solid rgba(255,255,255,0.12)" }}>
-              <Icon size={12} color="rgba(255,255,255,0.75)" />
-              <span style={{ fontSize:11, color:"rgba(255,255,255,0.75)", fontWeight:700 }}>{label}</span>
-            </div>
-          ))}
-        </div>
+        <h1 style={{ fontSize:26, fontWeight:900, color:C.text, letterSpacing:-0.5, marginBottom:4 }}>Sloty</h1>
+        <p style={{ fontSize:13, color:C.muted, fontWeight:600 }}>Skip the wait. Book your slot.</p>
       </div>
 
-      {/* Role buttons — both now equally bold and vibrant, so Customer
-          and Store Owner feel like two equally attractive, legitimate
-          paths rather than one primary + one secondary option. */}
       <div style={{ display:"flex", flexDirection:"column", gap:14, width:"100%", maxWidth:340 }}>
-        {roles.map(({ role, Icon, label, sub, bg, shadow }) => (
+        {roles.map(({ role, Icon, label, sub, color }) => (
           <button
             key={role}
             onClick={() => navigate(`/auth/${role}`)}
             style={{
-              padding:"20px 22px", background:bg, border:"none", borderRadius:20,
-              cursor:"pointer", fontFamily:"'Nunito',sans-serif", display:"flex",
-              alignItems:"center", gap:16, textAlign:"left", boxShadow:shadow,
-              transition:"transform 0.15s ease, box-shadow 0.15s ease",
+              padding:"18px 20px", background:C.card, border:"1.5px solid #E8ECF5", borderLeft:`4px solid ${color}`,
+              borderRadius:16, cursor:"pointer", fontFamily:"'Nunito',sans-serif", display:"flex",
+              alignItems:"center", gap:14, textAlign:"left", boxShadow:"0 2px 10px rgba(26,26,46,0.05)",
+              transition:"transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease",
             }}
-            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 20px rgba(26,26,46,0.08)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 10px rgba(26,26,46,0.05)"; }}
           >
-            <div style={{ width:48, height:48, borderRadius:16, background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-              <Icon size={24} color="#fff" strokeWidth={1.8} />
+            <div style={{ width:46, height:46, borderRadius:14, background:color+"15", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <Icon size={22} color={color} strokeWidth={1.8} />
             </div>
             <div style={{ flex:1 }}>
-              <p style={{ fontSize:16, fontWeight:900, color:"#fff", marginBottom:2 }}>{label}</p>
-              <p style={{ fontSize:12, color:"rgba(255,255,255,0.8)", fontWeight:600 }}>{sub}</p>
+              <p style={{ fontSize:15, fontWeight:900, color:C.text, marginBottom:2 }}>{label}</p>
+              <p style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{sub}</p>
             </div>
-            <ChevronRight size={20} color="rgba(255,255,255,0.7)" />
+            <ChevronRight size={18} color={C.muted} />
           </button>
         ))}
       </div>
 
-      {/* Footer — fills the space below the role buttons with something
-          genuinely useful rather than empty decoration: links to the
-          Privacy Policy and Terms pages, which already exist and are
-          routed but weren't linked from anywhere visible until now. */}
-      <div style={{ marginTop:40, textAlign:"center" }}>
-        <p style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginBottom:8 }}>
+      <div style={{ marginTop:36, textAlign:"center" }}>
+        <p style={{ fontSize:11, color:C.muted, marginBottom:6 }}>
           By continuing, you agree to our
         </p>
         <div style={{ display:"flex", gap:6, justifyContent:"center", alignItems:"center", fontSize:11, fontWeight:700 }}>
-          <span onClick={() => navigate("/terms")} style={{ color:"rgba(255,255,255,0.6)", cursor:"pointer", textDecoration:"underline" }}>Terms of Service</span>
-          <span style={{ color:"rgba(255,255,255,0.3)" }}>&</span>
-          <span onClick={() => navigate("/privacy")} style={{ color:"rgba(255,255,255,0.6)", cursor:"pointer", textDecoration:"underline" }}>Privacy Policy</span>
+          <span onClick={() => navigate("/terms")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Terms of Service</span>
+          <span style={{ color:"#C5CAD8" }}>&</span>
+          <span onClick={() => navigate("/privacy")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Privacy Policy</span>
         </div>
       </div>
 
