@@ -1,52 +1,17 @@
 import { useNavigate } from "react-router-dom";
 import { C } from "../constants";
-import { Scissors, Stethoscope, Car, Sparkles, TrendingUp, Wallet, ChevronRight } from "lucide-react";
+import { MapPin, User, Store, ChevronRight } from "lucide-react";
 
-// Fifth pass — adapted from a reference screen the user liked: an
-// illustrated scene per role with small floating category bubbles, a
-// two-tone "Welcome to Sloty" heading, and a wave-footer closing line,
-// rather than a copy of its blue/green palette. Kept it to safe,
-// clean geometric illustrations (a phone mockup, a storefront) instead
-// of hand-drawn people — much more reliable to render well than a
-// freehand figure — and the floating bubbles use the app's own real
-// service-category icons instead of arbitrary ones.
-function CustomerScene() {
-  return (
-    <svg viewBox="0 0 140 120" width="100%" height="100%" style={{ overflow:"visible" }}>
-      <ellipse cx="70" cy="106" rx="46" ry="8" fill={C.pri} opacity="0.08" />
-      <g transform="rotate(-9 70 58)">
-        <rect x="35" y="8" width="70" height="106" rx="16" fill="#fff" stroke={C.pri} strokeWidth="3" />
-        <rect x="44" y="20" width="52" height="14" rx="5" fill="#F3EFFF" />
-        <rect x="44" y="40" width="52" height="38" rx="9" fill="#F3EFFF" />
-        <circle cx="55" cy="52" r="6.5" fill={C.pri} />
-        <rect x="66" y="47" width="26" height="5" rx="2.5" fill="#C9B8FF" />
-        <rect x="66" y="57" width="18" height="5" rx="2.5" fill="#E4D9FF" />
-        <rect x="44" y="86" width="52" height="13" rx="6.5" fill={C.pri} />
-      </g>
-    </svg>
-  );
-}
-
-function OwnerScene() {
-  return (
-    <svg viewBox="0 0 140 120" width="100%" height="100%" style={{ overflow:"visible" }}>
-      <ellipse cx="70" cy="108" rx="46" ry="8" fill={C.blue} opacity="0.08" />
-      <path d="M28 52 L42 26 L98 26 L112 52 Z" fill={C.blue} />
-      <rect x="33" y="52" width="74" height="54" rx="6" fill="#fff" stroke={C.blue} strokeWidth="3" />
-      <rect x="42" y="60" width="24" height="20" rx="4" fill="#EAF4FF" />
-      <path d="M46 74 L52 66 L57 70 L63 61" stroke={C.blue} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      <rect x="60" y="86" width="20" height="20" rx="3" fill="#EAF4FF" stroke={C.blue} strokeWidth="2" />
-      <circle cx="76" cy="96" r="1.6" fill={C.blue} />
-    </svg>
-  );
-}
-
-const Bubble = ({ Icon, color, bg, style }) => (
-  <div style={{ position:"absolute", width:30, height:30, borderRadius:"50%", background:bg, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 4px 10px rgba(20,10,50,0.1)", ...style }}>
-    <Icon size={14} color={color} strokeWidth={2} />
-  </div>
-);
-
+// Sixth pass. Every illustrated/animated/dark-hero idea tried so far
+// invented its own one-off visual language for this single screen.
+// The actual fix: this is the screen right before Auth.jsx, and
+// Auth.jsx already has an established shell — a gradient header panel
+// (icon badge + "SLOTY" accent-dot label + title + tagline, with two
+// soft translucent decorative circles) that overlaps into a light
+// body below via a negative-margin rounded-top card. Splash now uses
+// that exact same shell instead of a different one, so the app feels
+// like one continuous flow from the very first tap instead of
+// switching visual languages between screen 1 and screen 2.
 export default function Splash() {
   const navigate = useNavigate();
 
@@ -54,103 +19,84 @@ export default function Splash() {
   // URL (/auth/admin), never shown publicly.
   const roles = [
     {
-      role:"customer", label:"Customer", color:C.pri, bg:"#F3EFFF",
-      sub:"Find and book the best services near you, without the wait.",
-      Scene:CustomerScene,
-      bubbles:[
-        { Icon:Scissors,     top:-10, left:78,  bg:"#F3EFFF" },
-        { Icon:Sparkles,     top:2,   left:112, bg:"#FFF0F5" },
-        { Icon:Stethoscope,  top:52,  left:-14, bg:"#EAF4FF" },
-        { Icon:Car,          top:82,  left:110, bg:"#F0FDFB" },
-      ],
+      role:"customer",
+      Icon:User,
+      label:"I'm a Customer",
+      sub:"Book slots near you, skip the wait",
+      color:C.pri,
     },
     {
-      role:"owner", label:"Store Owner", color:C.blue, bg:"#EAF4FF",
-      sub:"Manage your bookings, your queue and grow your business.",
-      Scene:OwnerScene,
-      bubbles:[
-        { Icon:TrendingUp, top:-8, left:80, bg:"#EAF4FF" },
-        { Icon:Wallet,     top:70, left:114, bg:"#FFFBF0" },
-      ],
+      role:"owner",
+      Icon:Store,
+      label:"I'm a Store Owner",
+      sub:"Manage bookings, grow your business",
+      color:C.blue,
     },
   ];
 
   return (
-    <div style={{ minHeight:"100vh", background:"#fff", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden" }}>
+    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", display:"flex", flexDirection:"column" }}>
 
-      <div style={{ padding:"36px 22px 8px", position:"relative" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:6 }}>
-          <div style={{ width:36, height:36, borderRadius:11, background:`linear-gradient(135deg,${C.pri},#DB2777)`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8Z" fill="#fff" /><circle cx="12" cy="10" r="3" fill={C.pri} /></svg>
+      <div style={{ background:`linear-gradient(160deg,${C.pri} 0%,#DB2777 100%)`, padding:"56px 24px 56px", position:"relative", overflow:"hidden" }}>
+        <div style={{ position:"absolute", top:-40, right:-40, width:160, height:160, borderRadius:"50%", background:"rgba(255,255,255,0.05)" }} />
+        <div style={{ position:"absolute", bottom:-20, left:-30, width:100, height:100, borderRadius:"50%", background:"rgba(255,255,255,0.04)" }} />
+
+        <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+          <div style={{ width:60, height:60, borderRadius:20, background:"rgba(255,255,255,0.15)", border:"1.5px solid rgba(255,255,255,0.25)", display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(10px)" }}>
+            <MapPin size={28} color="#fff" strokeWidth={1.8} />
           </div>
-          <h1 style={{ fontSize:26, fontWeight:900, color:C.text, letterSpacing:-0.5 }}>Sloty</h1>
-        </div>
-        <p style={{ fontSize:12.5, color:C.muted, fontWeight:700, textAlign:"center" }}>Skip the wait. Book your slot.</p>
-
-        {/* Handwritten-style accent note — approximated with an
-            italic, slightly rotated caption since the app doesn't load
-            a script font elsewhere and adding one just for this one
-            line isn't worth a new font dependency. */}
-        <div style={{ position:"absolute", top:34, right:18, transform:"rotate(-6deg)", textAlign:"center" }}>
-          <p style={{ fontSize:11, fontStyle:"italic", fontWeight:800, color:C.pri }}>Made for you</p>
-          <div style={{ height:2, width:"70%", margin:"1px auto 0", background:C.pri, opacity:0.4, borderRadius:2 }} />
-        </div>
-      </div>
-
-      <div style={{ textAlign:"center", padding:"14px 24px 22px" }}>
-        <h2 style={{ fontSize:21, fontWeight:900, color:C.text, marginBottom:4 }}>Welcome to <span style={{ color:C.pri }}>Sloty</span></h2>
-        <p style={{ fontSize:13, color:C.muted, fontWeight:600 }}>Choose how you'd like to continue</p>
-      </div>
-
-      <div style={{ padding:"0 20px", display:"flex", flexDirection:"column", gap:18 }}>
-        {roles.map(({ role, label, color, bg, sub, Scene, bubbles }) => (
-          <button
-            key={role}
-            onClick={() => navigate(`/auth/${role}`)}
-            style={{
-              position:"relative", background:bg, border:"none", borderRadius:24, padding:"22px 20px",
-              cursor:"pointer", fontFamily:"'Nunito',sans-serif", textAlign:"left", overflow:"visible",
-              display:"flex", alignItems:"center", gap:12,
-              boxShadow:"0 4px 16px rgba(20,10,50,0.06)", transition:"transform 0.18s ease, box-shadow 0.18s ease",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = `0 14px 28px ${color}30`; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(20,10,50,0.06)"; }}
-          >
-            <div style={{ flex:1, minWidth:0 }}>
-              <p style={{ fontSize:13.5, fontWeight:800, color:C.text, marginBottom:0 }}>I'm a</p>
-              <p style={{ fontSize:21, fontWeight:900, color, marginBottom:8, lineHeight:1.05 }}>{label}</p>
-              <p style={{ fontSize:12.5, color:C.muted, fontWeight:600, lineHeight:1.4 }}>{sub}</p>
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+              <div style={{ width:6, height:6, borderRadius:"50%", background:C.acc }} />
+              <span style={{ fontSize:11, color:C.acc, fontWeight:800, letterSpacing:2 }}>WELCOME TO</span>
             </div>
-
-            <div style={{ position:"relative", width:118, height:110, flexShrink:0 }}>
-              <Scene />
-              {bubbles.map((b,i) => <Bubble key={i} Icon={b.Icon} color={color} bg={b.bg} style={{ top:b.top, left:b.left }} />)}
-            </div>
-
-            <div style={{ position:"absolute", right:16, bottom:-14, width:38, height:38, borderRadius:"50%", background:color, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 6px 16px ${color}55` }}>
-              <ChevronRight size={18} color="#fff" strokeWidth={2.5} />
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <div style={{ marginTop:38, textAlign:"center", padding:"0 24px" }}>
-        <div style={{ display:"flex", gap:6, justifyContent:"center", alignItems:"center", fontSize:11, fontWeight:700 }}>
-          <span onClick={() => navigate("/terms")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Terms of Service</span>
-          <span style={{ color:"#C5CAD8" }}>&</span>
-          <span onClick={() => navigate("/privacy")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Privacy Policy</span>
+            <h1 style={{ fontSize:28, fontWeight:900, color:"#fff", lineHeight:1.1 }}>Sloty</h1>
+            <p style={{ fontSize:12, color:"rgba(255,255,255,0.65)", marginTop:4 }}>Skip the wait. Book your slot.</p>
+          </div>
         </div>
       </div>
 
-      <div style={{ position:"relative", marginTop:26 }}>
-        <svg viewBox="0 0 400 60" width="100%" height="60" preserveAspectRatio="none" style={{ display:"block" }}>
-          <path d="M0,30 C100,60 300,0 400,30 L400,60 L0,60 Z" fill="#F3EFFF" />
-        </svg>
-        <div style={{ background:"#F3EFFF", padding:"0 24px 26px", textAlign:"center" }}>
-          <p style={{ fontSize:12.5, fontStyle:"italic", fontWeight:800, color:C.pri }}>Same great service, zero wait.</p>
-        </div>
-      </div>
+      <div style={{ flex:1, background:C.bg, marginTop:-24, borderTopLeftRadius:28, borderTopRightRadius:28, padding:"24px 20px 40px", overflowY:"auto" }}>
 
+        <p style={{ fontSize:13, color:C.muted, fontWeight:700, marginBottom:14 }}>Choose how you'd like to continue</p>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+          {roles.map(({ role, Icon, label, sub, color }) => (
+            <button
+              key={role}
+              onClick={() => navigate(`/auth/${role}`)}
+              style={{
+                padding:"18px 20px", background:"#fff", border:"none", borderRadius:20, cursor:"pointer",
+                fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:14, textAlign:"left",
+                boxShadow:"0 4px 24px rgba(0,0,0,0.06)", transition:"transform 0.15s ease, box-shadow 0.15s ease",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.1)"; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(0,0,0,0.06)"; }}
+            >
+              <div style={{ width:48, height:48, borderRadius:15, background:color+"15", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                <Icon size={23} color={color} strokeWidth={1.8} />
+              </div>
+              <div style={{ flex:1 }}>
+                <p style={{ fontSize:15, fontWeight:900, color:C.text, marginBottom:2 }}>{label}</p>
+                <p style={{ fontSize:12, color:C.muted, fontWeight:600 }}>{sub}</p>
+              </div>
+              <ChevronRight size={18} color={C.muted} />
+            </button>
+          ))}
+        </div>
+
+        <div style={{ marginTop:32, textAlign:"center" }}>
+          <p style={{ fontSize:11, color:C.muted, marginBottom:6 }}>
+            By continuing, you agree to our
+          </p>
+          <div style={{ display:"flex", gap:6, justifyContent:"center", alignItems:"center", fontSize:11, fontWeight:700 }}>
+            <span onClick={() => navigate("/terms")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Terms of Service</span>
+            <span style={{ color:"#C5CAD8" }}>&</span>
+            <span onClick={() => navigate("/privacy")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Privacy Policy</span>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
