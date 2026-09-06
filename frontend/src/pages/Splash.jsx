@@ -2,14 +2,15 @@ import { useNavigate } from "react-router-dom";
 import { C } from "../constants";
 import { User, Store, MapPin, ChevronRight, Zap, Clock } from "lucide-react";
 
-// Second pass at this screen. The flat light version fixed the color
-// clash but landed too plain. This keeps the light theme (still
-// cohesive with the rest of the app, still no harsh dark/glow) but
-// adds real visual richness: a soft pastel gradient-mesh backdrop
-// instead of flat gray, a glowing hero mark, and role cards with a
-// gentle tinted-gradient fill (not stark white, not a loud solid
-// gradient either) plus a soft colored shadow that only appears on
-// hover — depth without going back to the "generic template" look.
+// Third pass. The soft pastel-mesh background was so low-saturation
+// that the muted gray body text had almost nothing to contrast
+// against and read as faded. Switched to an actual solid brand-color
+// backdrop (the app's own violet, matching CustomerApp/Auth's role
+// gradient) with crisp white text, and white role cards floating on
+// top of it — colored backdrop + white content cards is a strong,
+// classic pairing that gives real contrast in both directions, rather
+// than everything sitting at the same low-saturation, low-contrast
+// level.
 export default function Splash() {
   const navigate = useNavigate();
 
@@ -43,46 +44,45 @@ export default function Splash() {
   return (
     <div style={{
       minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-      padding:"32px 24px", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden",
-      background:`radial-gradient(circle at 15% -10%, #F0EBFF 0%, transparent 45%), radial-gradient(circle at 100% 10%, #E8F4FF 0%, transparent 40%), radial-gradient(circle at 0% 100%, #FFF0F6 0%, transparent 40%), ${C.bg}`,
+      padding:"32px 24px", fontFamily:"'Nunito',sans-serif",
+      background:`linear-gradient(165deg, ${C.pri} 0%, #6D28D9 55%, #4C1D95 100%)`,
     }}>
 
-      <div style={{ textAlign:"center", marginBottom:34, position:"relative", zIndex:1 }}>
-        <div style={{ width:64, height:64, borderRadius:20, background:`linear-gradient(135deg,${C.pri},#DB2777)`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", boxShadow:`0 16px 32px ${C.pri}38` }}>
-          <MapPin size={30} color="#fff" strokeWidth={2} />
+      <div style={{ textAlign:"center", marginBottom:34 }}>
+        <div style={{ width:64, height:64, borderRadius:20, background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", boxShadow:"0 12px 28px rgba(0,0,0,0.18)" }}>
+          <MapPin size={30} color={C.pri} strokeWidth={2} />
         </div>
-        <h1 style={{ fontSize:30, fontWeight:900, color:C.text, letterSpacing:-0.5, marginBottom:6 }}>Sloty</h1>
-        <p style={{ fontSize:13.5, color:C.muted, fontWeight:600, marginBottom:18 }}>Skip the wait. Book your slot.</p>
+        <h1 style={{ fontSize:30, fontWeight:900, color:"#fff", letterSpacing:-0.5, marginBottom:6 }}>Sloty</h1>
+        <p style={{ fontSize:13.5, color:"rgba(255,255,255,0.85)", fontWeight:700, marginBottom:18 }}>Skip the wait. Book your slot.</p>
 
         <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:14 }}>
           {trust.map(({ Icon, label }, i) => (
             <div key={label} style={{ display:"flex", alignItems:"center", gap:14 }}>
-              {i > 0 && <div style={{ width:3, height:3, borderRadius:"50%", background:"#C5CAD8" }} />}
+              {i > 0 && <div style={{ width:3, height:3, borderRadius:"50%", background:"rgba(255,255,255,0.35)" }} />}
               <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                <Icon size={12} color={C.pri} />
-                <span style={{ fontSize:11.5, color:C.muted, fontWeight:700 }}>{label}</span>
+                <Icon size={12} color="rgba(255,255,255,0.85)" />
+                <span style={{ fontSize:11.5, color:"rgba(255,255,255,0.85)", fontWeight:700 }}>{label}</span>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{ display:"flex", flexDirection:"column", gap:16, width:"100%", maxWidth:340, position:"relative", zIndex:1 }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:16, width:"100%", maxWidth:340 }}>
         {roles.map(({ role, Icon, label, sub, color, dark }) => (
           <button
             key={role}
             onClick={() => navigate(`/auth/${role}`)}
             style={{
-              padding:"22px 20px", background:`linear-gradient(135deg, ${color}10, ${color}03 60%)`,
-              border:`1.5px solid ${color}28`, borderRadius:20, cursor:"pointer",
+              padding:"22px 20px", background:"#fff", border:"none", borderRadius:20, cursor:"pointer",
               fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:16, textAlign:"left",
-              boxShadow:"0 2px 12px rgba(26,26,46,0.04)",
-              transition:"transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease",
+              boxShadow:"0 12px 30px rgba(20,10,50,0.22)",
+              transition:"transform 0.18s ease, box-shadow 0.18s ease",
             }}
-            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = `0 14px 28px ${color}30`; e.currentTarget.style.borderColor = color+"55"; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 12px rgba(26,26,46,0.04)"; e.currentTarget.style.borderColor = color+"28"; }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 18px 38px rgba(20,10,50,0.3)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 12px 30px rgba(20,10,50,0.22)"; }}
           >
-            <div style={{ width:52, height:52, borderRadius:16, background:`linear-gradient(135deg, ${color}, ${dark})`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, boxShadow:`0 8px 18px ${color}44` }}>
+            <div style={{ width:52, height:52, borderRadius:16, background:`linear-gradient(135deg, ${color}, ${dark})`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
               <Icon size={24} color="#fff" strokeWidth={1.8} />
             </div>
             <div style={{ flex:1 }}>
@@ -94,14 +94,14 @@ export default function Splash() {
         ))}
       </div>
 
-      <div style={{ marginTop:34, textAlign:"center", position:"relative", zIndex:1 }}>
-        <p style={{ fontSize:11, color:C.muted, marginBottom:6 }}>
+      <div style={{ marginTop:34, textAlign:"center" }}>
+        <p style={{ fontSize:11, color:"rgba(255,255,255,0.6)", marginBottom:6 }}>
           By continuing, you agree to our
         </p>
         <div style={{ display:"flex", gap:6, justifyContent:"center", alignItems:"center", fontSize:11, fontWeight:700 }}>
-          <span onClick={() => navigate("/terms")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Terms of Service</span>
-          <span style={{ color:"#C5CAD8" }}>&</span>
-          <span onClick={() => navigate("/privacy")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Privacy Policy</span>
+          <span onClick={() => navigate("/terms")} style={{ color:"rgba(255,255,255,0.85)", cursor:"pointer", textDecoration:"underline" }}>Terms of Service</span>
+          <span style={{ color:"rgba(255,255,255,0.4)" }}>&</span>
+          <span onClick={() => navigate("/privacy")} style={{ color:"rgba(255,255,255,0.85)", cursor:"pointer", textDecoration:"underline" }}>Privacy Policy</span>
         </div>
       </div>
 
