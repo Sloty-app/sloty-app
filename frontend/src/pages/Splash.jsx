@@ -1,17 +1,52 @@
 import { useNavigate } from "react-router-dom";
 import { C } from "../constants";
-import { User, Store, MapPin, ChevronRight, Zap, Clock } from "lucide-react";
+import { Scissors, Stethoscope, Car, Sparkles, TrendingUp, Wallet, ChevronRight } from "lucide-react";
 
-// Fourth pass — asked to make this genuinely impressive rather than
-// just "clean". Keeps everything that already fixed real problems
-// (solid brand-violet backdrop so text has real contrast, white cards
-// so their own text stays crisp) and adds the things that make a first
-// screen feel premium instead of static: a slowly panning gradient and
-// two drifting blurred color orbs behind the content (alive, not a
-// frozen image), a staggered fade/slide entrance for the logo, title
-// and both cards instead of everything popping in at once, and a
-// diagonal light-sweep across each card on hover. All done with plain
-// CSS keyframes/backdrop-filter — no new dependency.
+// Fifth pass — adapted from a reference screen the user liked: an
+// illustrated scene per role with small floating category bubbles, a
+// two-tone "Welcome to Sloty" heading, and a wave-footer closing line,
+// rather than a copy of its blue/green palette. Kept it to safe,
+// clean geometric illustrations (a phone mockup, a storefront) instead
+// of hand-drawn people — much more reliable to render well than a
+// freehand figure — and the floating bubbles use the app's own real
+// service-category icons instead of arbitrary ones.
+function CustomerScene() {
+  return (
+    <svg viewBox="0 0 140 120" width="100%" height="100%" style={{ overflow:"visible" }}>
+      <ellipse cx="70" cy="106" rx="46" ry="8" fill={C.pri} opacity="0.08" />
+      <g transform="rotate(-9 70 58)">
+        <rect x="35" y="8" width="70" height="106" rx="16" fill="#fff" stroke={C.pri} strokeWidth="3" />
+        <rect x="44" y="20" width="52" height="14" rx="5" fill="#F3EFFF" />
+        <rect x="44" y="40" width="52" height="38" rx="9" fill="#F3EFFF" />
+        <circle cx="55" cy="52" r="6.5" fill={C.pri} />
+        <rect x="66" y="47" width="26" height="5" rx="2.5" fill="#C9B8FF" />
+        <rect x="66" y="57" width="18" height="5" rx="2.5" fill="#E4D9FF" />
+        <rect x="44" y="86" width="52" height="13" rx="6.5" fill={C.pri} />
+      </g>
+    </svg>
+  );
+}
+
+function OwnerScene() {
+  return (
+    <svg viewBox="0 0 140 120" width="100%" height="100%" style={{ overflow:"visible" }}>
+      <ellipse cx="70" cy="108" rx="46" ry="8" fill={C.blue} opacity="0.08" />
+      <path d="M28 52 L42 26 L98 26 L112 52 Z" fill={C.blue} />
+      <rect x="33" y="52" width="74" height="54" rx="6" fill="#fff" stroke={C.blue} strokeWidth="3" />
+      <rect x="42" y="60" width="24" height="20" rx="4" fill="#EAF4FF" />
+      <path d="M46 74 L52 66 L57 70 L63 61" stroke={C.blue} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="60" y="86" width="20" height="20" rx="3" fill="#EAF4FF" stroke={C.blue} strokeWidth="2" />
+      <circle cx="76" cy="96" r="1.6" fill={C.blue} />
+    </svg>
+  );
+}
+
+const Bubble = ({ Icon, color, bg, style }) => (
+  <div style={{ position:"absolute", width:30, height:30, borderRadius:"50%", background:bg, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 4px 10px rgba(20,10,50,0.1)", ...style }}>
+    <Icon size={14} color={color} strokeWidth={2} />
+  </div>
+);
+
 export default function Splash() {
   const navigate = useNavigate();
 
@@ -19,152 +54,100 @@ export default function Splash() {
   // URL (/auth/admin), never shown publicly.
   const roles = [
     {
-      role:"customer",
-      Icon:User,
-      label:"I'm a Customer",
-      sub:"Book slots near you, skip the wait",
-      color:C.pri,
-      dark:"#6D28D9",
+      role:"customer", label:"Customer", color:C.pri, bg:"#F3EFFF",
+      sub:"Find and book the best services near you, without the wait.",
+      Scene:CustomerScene,
+      bubbles:[
+        { Icon:Scissors,     top:-10, left:78,  bg:"#F3EFFF" },
+        { Icon:Sparkles,     top:2,   left:112, bg:"#FFF0F5" },
+        { Icon:Stethoscope,  top:52,  left:-14, bg:"#EAF4FF" },
+        { Icon:Car,          top:82,  left:110, bg:"#F0FDFB" },
+      ],
     },
     {
-      role:"owner",
-      Icon:Store,
-      label:"I'm a Store Owner",
-      sub:"Manage bookings, grow your business",
-      color:C.blue,
-      dark:"#1D6FCC",
+      role:"owner", label:"Store Owner", color:C.blue, bg:"#EAF4FF",
+      sub:"Manage your bookings, your queue and grow your business.",
+      Scene:OwnerScene,
+      bubbles:[
+        { Icon:TrendingUp, top:-8, left:80, bg:"#EAF4FF" },
+        { Icon:Wallet,     top:70, left:114, bg:"#FFFBF0" },
+      ],
     },
-  ];
-
-  const trust = [
-    { Icon:MapPin, label:"Made for India"  },
-    { Icon:Zap,    label:"Real-time queue" },
-    { Icon:Clock,  label:"Zero wait time"  },
   ];
 
   return (
-    <div className="splash-root" style={{
-      minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-      padding:"32px 24px", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden",
-    }}>
-      <style>{`
-        .splash-root {
-          background: linear-gradient(165deg, ${C.pri} 0%, #6D28D9 45%, #4C1D95 75%, #7C1D6E 100%);
-          background-size: 250% 250%;
-          animation: splashPan 14s ease-in-out infinite alternate;
-        }
-        @keyframes splashPan {
-          0%   { background-position: 0% 20%; }
-          100% { background-position: 100% 80%; }
-        }
-        .splash-orb {
-          position: absolute; border-radius: 50%; filter: blur(50px);
-          pointer-events: none;
-        }
-        .splash-orb--1 {
-          width: 260px; height: 260px; top: -80px; right: -60px;
-          background: rgba(236,72,153,0.35);
-          animation: splashFloat1 9s ease-in-out infinite alternate;
-        }
-        .splash-orb--2 {
-          width: 220px; height: 220px; bottom: -60px; left: -60px;
-          background: rgba(59,158,255,0.25);
-          animation: splashFloat2 11s ease-in-out infinite alternate;
-        }
-        @keyframes splashFloat1 {
-          0%   { transform: translate(0,0) scale(1); }
-          100% { transform: translate(-24px,28px) scale(1.15); }
-        }
-        @keyframes splashFloat2 {
-          0%   { transform: translate(0,0) scale(1); }
-          100% { transform: translate(20px,-20px) scale(1.1); }
-        }
-        .splash-in {
-          opacity: 0;
-          animation: splashInUp 0.7s cubic-bezier(0.16,1,0.3,1) forwards;
-        }
-        @keyframes splashInUp {
-          from { opacity: 0; transform: translateY(18px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .splash-logo-bob {
-          animation: splashBob 3.2s ease-in-out 0.9s infinite;
-        }
-        @keyframes splashBob {
-          0%, 100% { transform: translateY(0); }
-          50%      { transform: translateY(-6px); }
-        }
-        .splash-card { position: relative; overflow: hidden; }
-        .splash-card::after {
-          content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
-          background: linear-gradient(100deg, transparent, rgba(255,255,255,0.55), transparent);
-          transform: skewX(-20deg);
-          transition: left 0.6s ease;
-        }
-        .splash-card:hover::after { left: 130%; }
-      `}</style>
+    <div style={{ minHeight:"100vh", background:"#fff", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden" }}>
 
-      <div className="splash-orb splash-orb--1" />
-      <div className="splash-orb splash-orb--2" />
-
-      <div style={{ textAlign:"center", marginBottom:34, position:"relative", zIndex:1 }}>
-        <div className="splash-in" style={{ marginBottom:16 }}>
-          <div className="splash-logo-bob" style={{ width:64, height:64, borderRadius:20, background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto", boxShadow:"0 12px 28px rgba(0,0,0,0.2)" }}>
-            <MapPin size={30} color={C.pri} strokeWidth={2} />
+      <div style={{ padding:"36px 22px 8px", position:"relative" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:6 }}>
+          <div style={{ width:36, height:36, borderRadius:11, background:`linear-gradient(135deg,${C.pri},#DB2777)`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8Z" fill="#fff" /><circle cx="12" cy="10" r="3" fill={C.pri} /></svg>
           </div>
+          <h1 style={{ fontSize:26, fontWeight:900, color:C.text, letterSpacing:-0.5 }}>Sloty</h1>
         </div>
-        <h1 className="splash-in" style={{ animationDelay:"0.1s", fontSize:32, fontWeight:900, color:"#fff", letterSpacing:-0.5, marginBottom:6 }}>Sloty</h1>
-        <p className="splash-in" style={{ animationDelay:"0.18s", fontSize:13.5, color:"rgba(255,255,255,0.85)", fontWeight:700, marginBottom:18 }}>Skip the wait. Book your slot.</p>
+        <p style={{ fontSize:12.5, color:C.muted, fontWeight:700, textAlign:"center" }}>Skip the wait. Book your slot.</p>
 
-        <div className="splash-in" style={{ animationDelay:"0.26s", display:"flex", alignItems:"center", justifyContent:"center", gap:14 }}>
-          {trust.map(({ Icon, label }, i) => (
-            <div key={label} style={{ display:"flex", alignItems:"center", gap:14 }}>
-              {i > 0 && <div style={{ width:3, height:3, borderRadius:"50%", background:"rgba(255,255,255,0.35)" }} />}
-              <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                <Icon size={12} color="rgba(255,255,255,0.85)" />
-                <span style={{ fontSize:11.5, color:"rgba(255,255,255,0.85)", fontWeight:700 }}>{label}</span>
-              </div>
-            </div>
-          ))}
+        {/* Handwritten-style accent note — approximated with an
+            italic, slightly rotated caption since the app doesn't load
+            a script font elsewhere and adding one just for this one
+            line isn't worth a new font dependency. */}
+        <div style={{ position:"absolute", top:34, right:18, transform:"rotate(-6deg)", textAlign:"center" }}>
+          <p style={{ fontSize:11, fontStyle:"italic", fontWeight:800, color:C.pri }}>Made for you</p>
+          <div style={{ height:2, width:"70%", margin:"1px auto 0", background:C.pri, opacity:0.4, borderRadius:2 }} />
         </div>
       </div>
 
-      <div style={{ display:"flex", flexDirection:"column", gap:16, width:"100%", maxWidth:340, position:"relative", zIndex:1 }}>
-        {roles.map(({ role, Icon, label, sub, color, dark }, i) => (
+      <div style={{ textAlign:"center", padding:"14px 24px 22px" }}>
+        <h2 style={{ fontSize:21, fontWeight:900, color:C.text, marginBottom:4 }}>Welcome to <span style={{ color:C.pri }}>Sloty</span></h2>
+        <p style={{ fontSize:13, color:C.muted, fontWeight:600 }}>Choose how you'd like to continue</p>
+      </div>
+
+      <div style={{ padding:"0 20px", display:"flex", flexDirection:"column", gap:18 }}>
+        {roles.map(({ role, label, color, bg, sub, Scene, bubbles }) => (
           <button
             key={role}
-            className="splash-in splash-card"
-            style={{
-              animationDelay:`${0.34 + i*0.1}s`,
-              padding:"22px 20px", background:"#fff", border:"none", borderRadius:20, cursor:"pointer",
-              fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:16, textAlign:"left",
-              boxShadow:"0 12px 30px rgba(20,10,50,0.22)",
-              transition:"transform 0.18s ease, box-shadow 0.18s ease",
-            }}
             onClick={() => navigate(`/auth/${role}`)}
-            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 18px 38px rgba(20,10,50,0.3)"; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 12px 30px rgba(20,10,50,0.22)"; }}
+            style={{
+              position:"relative", background:bg, border:"none", borderRadius:24, padding:"22px 20px",
+              cursor:"pointer", fontFamily:"'Nunito',sans-serif", textAlign:"left", overflow:"visible",
+              display:"flex", alignItems:"center", gap:12,
+              boxShadow:"0 4px 16px rgba(20,10,50,0.06)", transition:"transform 0.18s ease, box-shadow 0.18s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = `0 14px 28px ${color}30`; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(20,10,50,0.06)"; }}
           >
-            <div style={{ width:52, height:52, borderRadius:16, background:`linear-gradient(135deg, ${color}, ${dark})`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-              <Icon size={24} color="#fff" strokeWidth={1.8} />
+            <div style={{ flex:1, minWidth:0 }}>
+              <p style={{ fontSize:13.5, fontWeight:800, color:C.text, marginBottom:0 }}>I'm a</p>
+              <p style={{ fontSize:21, fontWeight:900, color, marginBottom:8, lineHeight:1.05 }}>{label}</p>
+              <p style={{ fontSize:12.5, color:C.muted, fontWeight:600, lineHeight:1.4 }}>{sub}</p>
             </div>
-            <div style={{ flex:1 }}>
-              <p style={{ fontSize:16, fontWeight:900, color:C.text, marginBottom:2 }}>{label}</p>
-              <p style={{ fontSize:12.5, color:C.muted, fontWeight:600 }}>{sub}</p>
+
+            <div style={{ position:"relative", width:118, height:110, flexShrink:0 }}>
+              <Scene />
+              {bubbles.map((b,i) => <Bubble key={i} Icon={b.Icon} color={color} bg={b.bg} style={{ top:b.top, left:b.left }} />)}
             </div>
-            <ChevronRight size={19} color={color} />
+
+            <div style={{ position:"absolute", right:16, bottom:-14, width:38, height:38, borderRadius:"50%", background:color, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 6px 16px ${color}55` }}>
+              <ChevronRight size={18} color="#fff" strokeWidth={2.5} />
+            </div>
           </button>
         ))}
       </div>
 
-      <div className="splash-in" style={{ animationDelay:"0.56s", marginTop:34, textAlign:"center", position:"relative", zIndex:1 }}>
-        <p style={{ fontSize:11, color:"rgba(255,255,255,0.6)", marginBottom:6 }}>
-          By continuing, you agree to our
-        </p>
+      <div style={{ marginTop:38, textAlign:"center", padding:"0 24px" }}>
         <div style={{ display:"flex", gap:6, justifyContent:"center", alignItems:"center", fontSize:11, fontWeight:700 }}>
-          <span onClick={() => navigate("/terms")} style={{ color:"rgba(255,255,255,0.85)", cursor:"pointer", textDecoration:"underline" }}>Terms of Service</span>
-          <span style={{ color:"rgba(255,255,255,0.4)" }}>&</span>
-          <span onClick={() => navigate("/privacy")} style={{ color:"rgba(255,255,255,0.85)", cursor:"pointer", textDecoration:"underline" }}>Privacy Policy</span>
+          <span onClick={() => navigate("/terms")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Terms of Service</span>
+          <span style={{ color:"#C5CAD8" }}>&</span>
+          <span onClick={() => navigate("/privacy")} style={{ color:C.muted, cursor:"pointer", textDecoration:"underline" }}>Privacy Policy</span>
+        </div>
+      </div>
+
+      <div style={{ position:"relative", marginTop:26 }}>
+        <svg viewBox="0 0 400 60" width="100%" height="60" preserveAspectRatio="none" style={{ display:"block" }}>
+          <path d="M0,30 C100,60 300,0 400,30 L400,60 L0,60 Z" fill="#F3EFFF" />
+        </svg>
+        <div style={{ background:"#F3EFFF", padding:"0 24px 26px", textAlign:"center" }}>
+          <p style={{ fontSize:12.5, fontStyle:"italic", fontWeight:800, color:C.pri }}>Same great service, zero wait.</p>
         </div>
       </div>
 
