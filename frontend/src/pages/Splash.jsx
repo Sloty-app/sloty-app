@@ -76,7 +76,7 @@ export default function Splash() {
   ];
 
   return (
-    <div style={{ minHeight:"100vh", background:"#fff", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden" }}>
+    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", background:"#fff", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden" }}>
 
       <div style={{ padding:"40px 22px 8px", position:"relative" }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:8 }}>
@@ -142,11 +142,18 @@ export default function Splash() {
         </div>
       </div>
 
-      <div style={{ position:"relative", marginTop:28 }}>
-        <svg viewBox="0 0 400 60" width="100%" height="60" preserveAspectRatio="none" style={{ display:"block" }}>
+      {/* flex:1 on the lavender section (not just this wrapper) is what
+          actually closes the gap — on a device where the content above
+          is shorter than the real viewport height, this stretches down
+          to the bottom of the screen instead of stopping at its own
+          content height and leaving the root's white background
+          exposed below it, which is exactly what showed up as a blank
+          white gap on a real phone. */}
+      <div style={{ position:"relative", marginTop:28, flex:1, display:"flex", flexDirection:"column" }}>
+        <svg viewBox="0 0 400 60" width="100%" height="60" preserveAspectRatio="none" style={{ display:"block", flexShrink:0 }}>
           <path d="M0,30 C100,60 300,0 400,30 L400,60 L0,60 Z" fill="#F3EFFF" />
         </svg>
-        <div style={{ background:"#F3EFFF", padding:"0 24px 28px", textAlign:"center" }}>
+        <div style={{ background:"#F3EFFF", flex:1, padding:"0 24px 28px", display:"flex", alignItems:"center", justifyContent:"center", textAlign:"center" }}>
           <p style={{ fontSize:12.5, fontStyle:"italic", fontWeight:800, color:C.pri }}>Same great service, zero wait.</p>
         </div>
       </div>
