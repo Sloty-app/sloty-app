@@ -1616,7 +1616,7 @@ export default function CustomerApp() {
             {user.name?.charAt(0).toUpperCase()}
           </div>
         </div>
-        <div style={{ position:"relative" }}>
+        <div className="search-wrap" style={{ position:"relative" }}>
           <div style={{ background:C.card, borderRadius:16, padding:"13px 18px", display:"flex", gap:14, alignItems:"center", boxShadow:"0 8px 32px rgba(0,0,0,0.15)", position:"relative" }}>
             <Search size={18} color={C.muted} />
             <div style={{ flex:1, position:"relative", minWidth:0 }}>
@@ -1844,7 +1844,7 @@ export default function CustomerApp() {
       {ToastEl}
       <TopBar title={selCat?.name||selGroup?.name||"All Services"} sub={userArea||userCity||"Near You"} onBack={() => {setScreen("home");setTab("home");setSelCat(null);setSelGroup(null);setSearch("");}} />
       <div style={{ padding:"14px 16px 0" }}>
-        <div style={{ background:C.card, borderRadius:14, padding:"12px 16px", display:"flex", gap:10, alignItems:"center", marginBottom:12, boxShadow:"0 2px 8px rgba(0,0,0,0.05)" }}>
+        <div className="search-wrap" style={{ background:C.card, borderRadius:14, padding:"12px 16px", display:"flex", gap:10, alignItems:"center", marginBottom:12, boxShadow:"0 2px 8px rgba(0,0,0,0.05)" }}>
           <Search size={16} color={C.muted} />
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search stores..." style={{ flex:1, border:"none", fontSize:13, outline:"none", background:"transparent", fontFamily:"'Nunito',sans-serif" }} />
           {search && <div onClick={()=>setSearch("")} style={{ display:"flex", cursor:"pointer" }}><X size={14} color={C.muted} /></div>}
@@ -2823,7 +2823,7 @@ export default function CustomerApp() {
 
   // ── Profile ───────────────────────────────────────────────────────────────
   if (tab==="profile") return (
-    <div key="profile" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:80 }}>
+    <div key="profile" className="screen-enter desk-narrow" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:80 }}>
       <div style={{ background:`linear-gradient(135deg,${C.pri},#E0406A)`, padding:"44px 20px 32px", borderBottomLeftRadius:32, borderBottomRightRadius:32 }}>
         <div style={{ display:"flex", gap:16, alignItems:"center" }}>
           <div style={{ width:64, height:64, borderRadius:"50%", background:"rgba(255,255,255,0.25)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, color:"#fff", fontWeight:900 }}>{user.name?.charAt(0)}</div>
