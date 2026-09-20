@@ -1,34 +1,56 @@
 // config/mailer.js
 //
-// Sends email via Resend's HTTP API instead of raw SMTP. This exists
-// specifically because Gmail SMTP proved genuinely unreliable on
-// Render's network — tried forcing IPv4, port 465, port 587, all hit
-// the same underlying connection failures. Resend sends over regular
-// HTTPS (the same port everything else in this app already uses
-// successfully), sidestepping that whole class of problem entirely.
+// Sends email via Twilio SendGrid's v3 HTTP API instead of raw SMTP.
+// This exists because Gmail SMTP proved genuinely unreliable on
+// Render's network (forcing IPv4, port 465, port 587 all hit the same
+// connection failures), and the Resend setup that replaced it only
+// ever delivered to the single address the account was registered
+// with. SendGrid sends over regular HTTPS (the same port everything
+// else in this app already uses), and can deliver to any recipient once
+// the sender address is verified in SendGrid.
 //
 // Uses Node's built-in fetch — no new package needed.
-const RESEND_API_URL = "https://api.resend.com/emails";
+//
+// Required env vars (both must be set, or nothing is sent):
+//   SENDGRID_API_KEY     — SendGrid dashboard > Settings > API Keys
+//                          (needs at least "Mail Send" permission)
+//   SENDGRID_FROM_EMAIL  — must be a VERIFIED sender in SendGrid
+//                          (Settings > Sender Authentication — either
+//                          Single Sender Verification or a verified
+//                          domain). SendGrid rejects any other address.
+// Optional:
+//   SENDGRID_FROM_NAME   — display name, defaults to "Sloty"
+const SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send";
 
-// Resend's own test domain — works immediately with zero setup, but
-// can only deliver to the email address you signed up to Resend with.
-// Swap this to your own verified domain (e.g. "Sloty <hello@sloty.com>")
-// once that's set up in Resend's dashboard, to send to real customers.
-const FROM_ADDRESS = "Sloty <onboarding@resend.dev>";
-
+// Never throws — callers fire this off alongside the main action (a
+// booking, an approval) and must not fail that action just because an
+// email couldn't go out. Failures are logged with SendGrid's own error
+// detail instead.
 const sendEmail = async (to, subject, html) => {
+  const apiKey    = process.env.SENDGRID_API_KEY;
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL;
+  if (!apiKey || !fromEmail) {
+    console.error("❌ Email not sent — SENDGRID_API_KEY and SENDGRID_FROM_EMAIL must both be set");
+    return;
+  }
   try {
-    const res = await fetch(RESEND_API_URL, {
+    const res = await fetch(SENDGRID_API_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from: FROM_ADDRESS, to, subject, html }),
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: fromEmail, name: process.env.SENDGRID_FROM_NAME || "Sloty" },
+        subject,
+        content: [{ type: "text/html", value: html }],
+      }),
     });
+    // SendGrid answers 202 Accepted (empty body) on success.
     if (!res.ok) {
       const errBody = await res.text();
-      throw new Error(`Resend API returned ${res.status}: ${errBody}`);
+      throw new Error(`SendGrid API returned ${res.status}: ${errBody}`);
     }
     console.log(`✅ Email sent to ${to}`);
   } catch (err) {
