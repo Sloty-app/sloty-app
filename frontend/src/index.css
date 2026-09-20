@@ -113,6 +113,62 @@ html, body {
   }
 }
 
+/* Entry pages (role picker + sign-in) on desktop: a centered block on a
+   full-width page rather than a phone column on a dark stage. Must come
+   after the >=1100px backdrop/shadow rules above so it overrides them
+   for these pages only (App.jsx adds .app-shell--entry / .entry-page).
+   Below 900px none of this applies and phones look exactly as before. */
+.auth-card { display: flex; flex-direction: column; flex: 1; }
+
+@media (min-width: 900px) {
+  html.entry-page, html.entry-page body {
+    background: linear-gradient(160deg, #F3EFFF 0%, #EAF4FF 100%);
+  }
+  .app-shell--entry {
+    max-width: none;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* Role picker: cards side by side in a centered row */
+  .splash-cards {
+    flex-direction: row !important;
+    width: 100%;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 32px !important;
+    gap: 28px !important;
+  }
+  .splash-cards > button { flex: 1 1 0; padding: 36px 32px !important; }
+  .splash-cards > button > div:first-child > p:nth-child(2) { font-size: 30px !important; }
+  .splash-cards > button > div:first-child > p:nth-child(3) { font-size: 14px !important; }
+  .splash-cards > button > div:nth-child(2) { transform: scale(1.3); transform-origin: center; margin: 0 22px 0 14px; }
+
+  /* Bigger header, with the accent note kept near the logo instead of
+     stuck at the far right edge of a wide screen */
+  .splash-header { padding-top: 60px !important; padding-bottom: 8px !important; }
+  .splash-header > div:first-child { transform: scale(1.4); transform-origin: center; margin-bottom: 20px !important; }
+  .splash-header > p { font-size: 15px !important; }
+  .splash-note { right: calc(50% - 400px) !important; top: 58px !important; }
+
+  /* Sign-in: the same header+form, as a centered card */
+  .auth-page {
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    background: transparent !important;
+  }
+  .auth-card {
+    flex: none;
+    width: 100%;
+    max-width: 480px;
+    border-radius: 28px;
+    overflow: hidden;
+    background: #F0F2F8;
+    box-shadow: 0 30px 80px rgba(80, 40, 160, 0.18);
+  }
+}
+
 ::-webkit-scrollbar { display: none; }
 
 ::selection { background: var(--pri); color: #fff; }

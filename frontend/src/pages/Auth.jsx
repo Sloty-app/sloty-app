@@ -432,7 +432,8 @@ export default function Auth() {
   const usesOtpFlow = role === "customer" || role === "owner";
 
   return (
-    <div style={{ minHeight:"100vh", background:"#F0F2F8", fontFamily:"'Nunito',sans-serif", display:"flex", flexDirection:"column" }}>
+    <div className="auth-page" style={{ minHeight:"100vh", background:"#F0F2F8", fontFamily:"'Nunito',sans-serif", display:"flex", flexDirection:"column" }}>
+      <div className="auth-card">
 
       <div style={{ background:cfg.gradient, padding:"52px 24px 56px", position:"relative", overflow:"hidden" }}>
         <div style={{ position:"absolute", top:-40, right:-40, width:160, height:160, borderRadius:"50%", background:"rgba(255,255,255,0.05)" }} />
@@ -571,6 +572,7 @@ export default function Auth() {
           </div>
         )}
 
+      </div>
       </div>
     </div>
   );

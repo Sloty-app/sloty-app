@@ -78,7 +78,7 @@ export default function Splash() {
   return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", background:"#fff", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden" }}>
 
-      <div style={{ padding:"28px 22px 4px", position:"relative" }}>
+      <div className="splash-header" style={{ padding:"28px 22px 4px", position:"relative" }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:9, marginBottom:6 }}>
           <div style={{ width:34, height:34, borderRadius:11, background:`linear-gradient(135deg,${C.pri},#DB2777)`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8Z" fill="#fff" /><circle cx="12" cy="10" r="3" fill={C.pri} /></svg>
@@ -91,7 +91,7 @@ export default function Splash() {
             italic, slightly rotated caption since the app doesn't load
             a script font elsewhere and adding one just for this one
             line isn't worth a new font dependency. */}
-        <div style={{ position:"absolute", top:30, right:20, transform:"rotate(-6deg)", textAlign:"center" }}>
+        <div className="splash-note" style={{ position:"absolute", top:30, right:20, transform:"rotate(-6deg)", textAlign:"center" }}>
           <p style={{ fontSize:11, fontStyle:"italic", fontWeight:800, color:C.pri }}>Made for you</p>
           <div style={{ height:2, width:"70%", margin:"1px auto 0", background:C.pri, opacity:0.4, borderRadius:2 }} />
         </div>
@@ -110,7 +110,7 @@ export default function Splash() {
           <p style={{ fontSize:13, color:C.muted, fontWeight:600 }}>Choose how you'd like to continue</p>
         </div>
 
-        <div style={{ padding:"0 20px", display:"flex", flexDirection:"column", gap:20 }}>
+        <div className="splash-cards" style={{ padding:"0 20px", display:"flex", flexDirection:"column", gap:20 }}>
           {roles.map(({ role, label, color, bg, sub, Scene, bubbles }) => (
             <button
               key={role}

@@ -1,5 +1,5 @@
-import { Suspense, lazy } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Suspense, lazy, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Splash          from "./pages/Splash";
 import Auth            from "./pages/Auth";
@@ -58,13 +58,33 @@ function AppRoutes() {
   );
 }
 
+// The first page (role picker) and the sign-in pages are laid out as a
+// centered block on a full-width page on desktop, instead of being
+// squeezed into the same narrow phone-width column the logged-in app
+// uses. Only those two get this — the privacy/terms pages are long
+// text that needs a narrow measure, and every logged-in screen is
+// still built as a single column. On phones nothing changes: the
+// classes below only have an effect from 900px up (see index.css).
+function Shell({ children }) {
+  const { user, checking } = useAuth();
+  const { pathname } = useLocation();
+  const isEntryPage = !user && !checking && (pathname === "/" || pathname.startsWith("/auth/"));
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("entry-page", isEntryPage);
+    return () => document.documentElement.classList.remove("entry-page");
+  }, [isEntryPage]);
+
+  return <div className={`app-shell${isEntryPage ? " app-shell--entry" : ""}`}>{children}</div>;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <div className="app-shell">
+        <Shell>
           <AppRoutes />
-        </div>
+        </Shell>
       </AuthProvider>
     </BrowserRouter>
   );
