@@ -19,10 +19,10 @@ function BarCard({ heading, data, color }) {
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top:6, right:6, left:-22, bottom:0 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.07)" strokeDasharray="4 4" vertical={false} />
-            <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} />
+            <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval={0} />
             <YAxis allowDecimals={false} tick={tick} axisLine={false} tickLine={false} />
             <Tooltip {...tip} formatter={v => [v, "Count"]} />
-            <Bar dataKey="count" fill={color} radius={[6,6,0,0]} maxBarSize={38} />
+            <Bar dataKey="count" fill={color} radius={[6,6,0,0]} maxBarSize={38} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
         {empty && <p style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:"rgba(255,255,255,0.35)", pointerEvents:"none" }}>Nothing recorded in this period</p>}
@@ -45,7 +45,7 @@ function StatusCard({ status }) {
         <div style={{ width:170, height:170, position:"relative", flexShrink:0 }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
-              <Pie data={total ? rows : [{ name:"None", value:1, color:"rgba(255,255,255,0.1)" }]} dataKey="value" innerRadius={52} outerRadius={78} paddingAngle={total ? 3 : 0} stroke="none">
+              <Pie data={total ? rows : [{ name:"None", value:1, color:"rgba(255,255,255,0.1)" }]} dataKey="value" innerRadius={52} outerRadius={78} paddingAngle={total ? 3 : 0} stroke="none" isAnimationActive={false}>
                 {(total ? rows : [{ color:"rgba(255,255,255,0.1)" }]).map((r, i) => <Cell key={i} fill={r.color} />)}
               </Pie>
               {total > 0 && <Tooltip {...tip} />}
@@ -73,7 +73,7 @@ function StatusCard({ status }) {
 export default function AdminCharts({ stats }) {
   if (!stats?.storesByMonth) return null;
   return (
-    <div className="chart-grid" style={{ display:"grid", gridTemplateColumns:"1fr", gap:14, marginBottom:20 }}>
+    <div className="chart-grid" style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr)", gap:14, marginBottom:20 }}>
       <BarCard heading="Store registrations · last 6 months" data={stats.storesByMonth} color={C.green} />
       <BarCard heading="Bookings · last 7 days" data={stats.bookingsByDay} color={C.pri} />
       <StatusCard status={stats.storeStatus} />
