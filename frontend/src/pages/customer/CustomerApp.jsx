@@ -12,6 +12,7 @@ import CategoryIllustration from "../../components/CategoryArt";
 // that belongs in the bundle every customer downloads just to see the
 // home screen.
 const BookingAssistant = lazy(() => import("../../components/BookingAssistant"));
+import AssistantFab from "../../components/AssistantFab";
 const CustomerChatModal = lazy(() => import("../../components/CustomerChatModal"));
 const ReferralScreen = lazy(() => import("../../components/ReferralScreen"));
 const PrivacyPolicy = lazy(() => import("../PrivacyPolicy"));
@@ -1814,38 +1815,8 @@ export default function CustomerApp() {
         </div>
       </div>
 
-      {/* Floating AI booking assistant launcher. `position:fixed`
-          positions relative to the real browser viewport, not the
-          centered app column — a hardcoded left:50% + translateX(Npx)
-          here only ever lined up with the column's right edge at one
-          exact viewport width, and drifted further off the more the
-          real viewport differed from that (badly so once --app-width
-          became responsive — see index.css — since the button no
-          longer even shared the app column's actual width). Fixed by
-          making the OUTER layer span the true viewport and center an
-          inner layer that's exactly var(--app-width) wide (clamped to
-          the viewport itself when narrower) — the button then just
-          sits 16px from THAT layer's own right edge, which is always
-          the app column's real edge at any width. The outer layer is
-          pointer-events:none so it doesn't block taps outside the
-          button; the button re-enables its own pointer-events. */}
-      <div style={{ position:"fixed", left:0, right:0, bottom:96, display:"flex", justifyContent:"center", pointerEvents:"none", zIndex:90 }}>
-        <div style={{ width:"var(--app-width)", maxWidth:"100%", position:"relative" }}>
-          <button
-            onClick={() => setShowAssistant(true)}
-            style={{
-              position:"absolute", right:16, bottom:0, pointerEvents:"auto",
-              width:54, height:54, borderRadius:"50%",
-              background:`linear-gradient(100deg,${C.pri},#DB2777)`,
-              border:"none", boxShadow:`0 8px 24px ${C.pri}55`,
-              display:"flex", alignItems:"center", justifyContent:"center",
-              cursor:"pointer", transition:"transform 0.15s ease",
-            }}
-          >
-            <Sparkles size={22} color="#fff" />
-          </button>
-        </div>
-      </div>
+      {/* Floating AI booking assistant launcher — draggable, see AssistantFab */}
+      <AssistantFab onOpen={() => setShowAssistant(true)} />
       {/* fallback={null} — this is mounted unconditionally (so its chat
           history survives closing/reopening within the session, same as
           before lazy-loading), so a visible fallback would flash on
