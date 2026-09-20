@@ -3,7 +3,7 @@ import { Clock, Circle, Heart, Share2, MapPin } from "lucide-react";
 import { C } from "../constants";
 import { getStoreCover, getOpenLabel } from "../utils/storeMedia";
 import { getCat } from "../constants";
-import { RatingPill } from "./HomeSections";
+import { RatingPill, WaitBadge } from "./HomeSections";
 import CategoryIllustration from "./CategoryArt";
 
 // Self-contained pulse animation for the "Open" status dot — a small
@@ -79,6 +79,9 @@ function StoreCard({ store, onSelect, onBook, isFavorite, onToggleFavorite, onSh
             </button>
           )}
         </div>
+
+        {/* Live wait — bottom-right of the photo */}
+        <WaitBadge store={store} style={{ position:"absolute", bottom:10, right:12, zIndex:2, boxShadow:"0 2px 8px rgba(0,0,0,0.18)" }} />
 
         {/* Offer tag — rides the bottom edge of the photo, Zomato-style */}
         {offer && (

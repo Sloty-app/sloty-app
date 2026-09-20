@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 const Store = require("../models/Store");
 const User  = require("../models/User");
 const { sendEmail, emailTemplates } = require("../config/mailer");
+const Booking = require("../models/Booking");
+const { getISTDateString } = require("../utils/date");
 
 // GET /api/stores — Public: Only APPROVED stores visible to customers
 exports.getStores = async (req, res) => {
@@ -39,6 +41,20 @@ exports.getStores = async (req, res) => {
         return a.distanceKm - b.distanceKm;
       });
     }
+
+    // Live wait estimate for the list cards: how many confirmed bookings
+    // are still ahead today, times the store slot length (split across
+    // parallel capacity). One grouped query for every listed store.
+    const counts = await Booking.aggregate([
+      { $match:{ store:{ $in:stores.map(s=>s._id) }, date:getISTDateString(), status:"confirmed" } },
+      { $group:{ _id:"$store", n:{ $sum:1 } } },
+    ]);
+    const waiting = Object.fromEntries(counts.map(c => [String(c._id), c.n]));
+    stores = stores.map(s => {
+      const n = waiting[String(s._id)] || 0;
+      const per = (s.slotDuration || 30) / Math.max(1, s.slotCapacity || 1);
+      return { ...s, waitingNow:n, waitMinutes:Math.round(n * per) };
+    });
 
     res.status(200).json({ success:true, count:stores.length, stores });
   } catch (err) {

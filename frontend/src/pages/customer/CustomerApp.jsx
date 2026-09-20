@@ -1132,7 +1132,7 @@ export default function CustomerApp() {
   // room so "X ahead of you" updates the instant something changes,
   // instead of waiting for the 20s poll.
   useEffect(() => {
-    if (tab !== "bookings") return;
+    if (tab !== "bookings" && tab !== "home") return; // home shows the live-turn strip too
     const today = getISTDateString();
     const storeIds = [...new Set(
       myBookings.filter(b => b.status==="confirmed" && b.date===today && b.store?._id).map(b => b.store._id)
@@ -1151,7 +1151,7 @@ export default function CustomerApp() {
   }, [tab, myBookings]);
 
   useEffect(() => {
-    if (tab !== "bookings") return;
+    if (tab !== "bookings" && tab !== "home") return;
     refreshQueuePositions(myBookings);
   }, [tab, myBookings]);
   useEffect(() => {
@@ -1700,6 +1700,29 @@ export default function CustomerApp() {
           })()}
         </div>
       </div>
+
+      {/* Live turn tracker — the one thing only a queue app can show:
+          today's active booking, how many are ahead, tap to open it. */}
+      {(() => {
+        const today = getISTDateString();
+        const live = myBookings.find(b => b.date===today && b.status==='in_progress')
+                  || myBookings.filter(b => b.date===today && b.status==='confirmed' && queueAhead[b._id] !== undefined).sort((x, y) => queueAhead[x._id] - queueAhead[y._id])[0]; // soonest turn first
+        if (!live) return null;
+        const going = live.status==='in_progress';
+        const ahead = queueAhead[live._id];
+        return (
+          <div className="live-turn" onClick={() => setTab('bookings')} style={{ margin:'16px 16px 0', background:going?'#E3F8F0':'#F1ECFF', border:`1.5px solid ${going?'#9FE1CB':'#D9CCFB'}`, borderRadius:16, padding:'12px 14px', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
+            <div style={{ width:40, height:40, borderRadius:12, background:going?C.green:C.pri, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <Clock size={20} color='#fff' />
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <p style={{ fontSize:14, fontWeight:900, color:C.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{going ? 'Your turn has started' : ahead===0 ? "You're next in line" : `${ahead} ${ahead===1?'person':'people'} ahead of you`}</p>
+              <p style={{ fontSize:12, color:C.muted, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{live.store?.name} · {live.timeSlot}{live.tokenNumber ? ` · Token ${live.tokenNumber}` : ''}</p>
+            </div>
+            <ChevronRight size={18} color={C.muted} />
+          </div>
+        );
+      })()}
 
       <div style={{ padding:"20px 0 0" }}>
         <div style={{ padding:"0 16px", marginBottom:14 }}>

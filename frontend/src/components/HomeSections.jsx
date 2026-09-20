@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Star, MapPin, ChevronRight, Tag, Zap } from "lucide-react";
+import { Star, MapPin, ChevronRight, Tag, Zap, Clock } from "lucide-react";
 import { C, getCat } from "../constants";
 import { getStoreCover, formatRating } from "../utils/storeMedia";
 import { formatDistance } from "../utils/geo";
@@ -38,6 +38,21 @@ export function RatingPill({ rating, size = "sm" }) {
   return (
     <span className="rating-pill" style={big ? { fontSize:13, padding:"5px 9px", borderRadius:8 } : undefined}>
       {formatRating(r)} <Star size={big ? 12 : 10} color="#fff" fill="#fff" strokeWidth={0} />
+    </span>
+  );
+}
+
+/** Live wait estimate from the store list (waitMinutes comes from the
+ *  backend: confirmed bookings still ahead today x slot length). Green up
+ *  to 15 min, amber up to 40, red beyond. Renders nothing when the store
+ *  is closed or the number is unknown. */
+export function WaitBadge({ store, style }) {
+  if (!store?.isOpen || typeof store.waitMinutes !== "number") return null;
+  const m = store.waitMinutes;
+  const [bg, fg] = m <= 15 ? ["#E3F8F0","#0B7A53"] : m <= 40 ? ["#FFF3D6","#8A5A00"] : ["#FFE4E4","#B42323"];
+  return (
+    <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:bg, color:fg, fontSize:11, fontWeight:800, padding:"3px 9px", borderRadius:20, whiteSpace:"nowrap", ...style }}>
+      <Clock size={11} strokeWidth={2.4} />{m === 0 ? "No wait" : `~${m} min wait`}
     </span>
   );
 }
@@ -182,6 +197,7 @@ export function StoreRail({ title, icon: Icon, iconColor = C.pri, stores, offers
                 <p style={{ fontSize:11, color:C.muted, marginTop:3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                   {cat.name}{dist ? ` · ${dist}` : s.area ? ` · ${s.area}` : ""}
                 </p>
+                <WaitBadge store={s} style={{ marginTop:6 }} />
               </div>
             </div>
           );

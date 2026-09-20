@@ -232,6 +232,8 @@ html, body {
   .app-shell--main .screen-enter { animation: none !important; transform: none !important; }
   .app-shell--main .screen-enter.desk-narrow { max-width: 560px; }
   .search-wrap { max-width: 640px; }
+  .chart-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .chart-grid > :last-child { grid-column: 1 / -1; }
   .stat-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 16px !important; }
   .cat-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 28px; }
 }

@@ -10,7 +10,7 @@ const { computeOfferDiscount } = require("./offerController");
 const sendNotification = require("../config/notify");
 const { sendBookingConfirmationWhatsApp } = require("../config/whatsapp");
 const { sendEmail, emailTemplates } = require("../config/mailer");
-const { getISTNow, getISTDateString } = require("../utils/date");
+const { getISTNow, getISTDateString, addDaysIST } = require("../utils/date");
 const { emitToRoom } = require("../config/socket");
 const { haversineKm, estimateTravelMinutes } = require("../utils/geo");
 
@@ -932,7 +932,39 @@ exports.getAdminStats = async (req, res) => {
       { $match:{ date:today, status:"completed" } },
       { $group:{ _id:null, total:{ $sum:"$service.price" } } },
     ]);
-    res.status(200).json({ success:true, stats:{ totalBookings, todayBookings, totalStores, totalUsers, todayRevenue: todayRevenue[0]?.total||0 } });
+    // Chart data for the admin dashboard: stores registered per month
+    // (last 6), bookings per day (last 7, IST date strings), and the
+    // approval-status split of all stores.
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const [byMonth, byDay, statusCounts] = await Promise.all([
+      Store.aggregate([
+        { $match:{ createdAt:{ $gte:monthStart } } },
+        { $group:{ _id:{ y:{ $year:"$createdAt" }, m:{ $month:"$createdAt" } }, n:{ $sum:1 } } },
+      ]),
+      Booking.aggregate([
+        { $match:{ date:{ $gte:addDaysIST(-6) } } },
+        { $group:{ _id:"$date", n:{ $sum:1 } } },
+      ]),
+      Store.aggregate([{ $group:{ _id:{ approved:"$isApproved", active:"$isActive" }, n:{ $sum:1 } } }]),
+    ]);
+    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const storesByMonth = Array.from({ length:6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+      const hit = byMonth.find(x => x._id.y === d.getFullYear() && x._id.m === d.getMonth() + 1);
+      return { label:monthNames[d.getMonth()], count:hit?.n || 0 };
+    });
+    const bookingsByDay = Array.from({ length:7 }, (_, i) => {
+      const key = addDaysIST(-(6 - i));
+      return { date:key, label:key.slice(8) + "/" + key.slice(5,7), count:byDay.find(x => x._id === key)?.n || 0 };
+    });
+    const pick = f => statusCounts.filter(f).reduce((a, x) => a + x.n, 0);
+    const storeStatus = {
+      approved: pick(x => x._id.approved && x._id.active !== false),
+      pending:  pick(x => !x._id.approved && x._id.active !== false),
+      removed:  pick(x => x._id.active === false),
+    };
+    res.status(200).json({ success:true, stats:{ totalBookings, todayBookings, totalStores, totalUsers, todayRevenue: todayRevenue[0]?.total||0, storesByMonth, bookingsByDay, storeStatus } });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }

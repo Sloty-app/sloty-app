@@ -3,6 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import { api } from "../../api";
 import { C, CATS, getCat } from "../../constants";
 import { Loader, StarRating } from "../../components/UI";
+import AdminCharts from "../../components/AdminCharts";
 import {
   LayoutDashboard, Clock, Store, Map, LogOut,
   CheckCircle, XCircle, Users, MapPin, Star,
@@ -385,6 +386,7 @@ export default function AdminApp() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
   const [allStores, setAllStores] = useState([]);
+  const [adminStats, setAdminStats] = useState(null); // platform totals + chart data
   const [loading,   setLoading]   = useState(true);
   const [tickets,      setTickets]      = useState([]);
   const [ticketsLoading, setTicketsLoading] = useState(true);
@@ -398,12 +400,14 @@ export default function AdminApp() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [pRes, aRes] = await Promise.all([
+      const [pRes, aRes, sRes] = await Promise.all([
         api("GET", "/stores/admin/pending"),
         api("GET", "/stores/admin/all"),
+        api("GET", "/bookings/admin/stats").catch(() => null), // charts are optional; never block the dashboard
       ]);
       setPending(pRes.stores||[]);
       setAllStores(aRes.stores||[]);
+      setAdminStats(sRes?.stats || null);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -574,12 +578,22 @@ export default function AdminApp() {
             {/* ── Overview ── */}
             {tab==="overview" && (
               <div>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:20 }}>
+                <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:20 }}>
                   <StatCard icon={Store}       value={approved.length}                label="Approved Stores"  color={C.blue}  onClick={() => {setStoresFilter("approved"); setTab("stores");}} />
                   <StatCard icon={Clock}       value={pendingCount}                   label="Pending Approval" color={C.acc}   onClick={() => setTab("approvals")} />
                   <StatCard icon={ClipboardList} value={allStores.length}            label="Total Stores"     color={C.green} onClick={() => {setStoresFilter("all"); setTab("stores");}} />
                   <StatCard icon={Map}         value={Object.keys(storesByArea).length} label="Areas Covered" color={C.pri}   onClick={() => setTab("byarea")} />
                 </div>
+
+                {adminStats && (
+                  <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:20 }}>
+                    <StatCard icon={Users}         value={adminStats.totalUsers}     label="Customers"        color={C.blue} />
+                    <StatCard icon={CalendarDays}  value={adminStats.todayBookings}  label="Bookings Today"   color={C.pri} />
+                    <StatCard icon={ClipboardList} value={adminStats.totalBookings}  label="Total Bookings"   color={C.green} />
+                    <StatCard icon={IndianRupee}   value={`₹${adminStats.todayRevenue}`} label="Revenue Today" color={C.acc} />
+                  </div>
+                )}
+                <AdminCharts stats={adminStats} />
 
                 <div style={{ background:"rgba(255,255,255,0.04)", borderRadius:18, padding:16, border:"1px solid rgba(255,255,255,0.06)", marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
                   <div style={{ display:"flex", gap:12, alignItems:"center" }}>
