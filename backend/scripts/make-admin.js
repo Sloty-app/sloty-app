@@ -14,11 +14,13 @@
 // Behaviour:
 //   - No user with that email       -> creates a new admin.
 //   - Already an admin              -> resets that admin's password.
-//   - Exists as customer/owner      -> refuses, and says why. Password
-//     login finds accounts by email alone (no role filter), so a second
-//     account under the same email can make login hit the wrong one.
-//     Pass --promote to convert that existing account to an admin
-//     instead (it stops being usable as a customer/owner login).
+//   - Exists as customer/owner      -> refuses by default. Options:
+//       --separate  add an admin alongside it and leave the existing
+//                   account untouched (password login checks every
+//                   account with the email, so this is safe once that
+//                   version of authController.login is deployed)
+//       --promote   convert the existing account into the admin instead
+//                   (it stops being usable as a customer/owner login)
 //
 // The password is read from the environment, never printed, and hashed
 // by the User model's own save hook.
@@ -30,6 +32,7 @@ const email    = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
 const password = process.env.ADMIN_PASSWORD || "";
 const phone    = (process.env.ADMIN_PHONE || "").trim();   // optional, 10-digit Indian number
 const promote  = process.argv.includes("--promote");
+const separate = process.argv.includes("--separate");
 
 const fail = (msg) => { console.error(`❌ ${msg}`); process.exit(1); };
 
@@ -55,8 +58,16 @@ const fail = (msg) => { console.error(`❌ ${msg}`); process.exit(1); };
       console.log(`✅ ${email} is already an admin — password reset`);
     } else {
       const roles = existing.map(u => u.role).join(", ");
+      if (separate) {
+        // Safe only once the deployed backend's password login checks
+        // every account with the email (authController.login does now).
+        await User.create({ name: "Sloty Admin", email, password, role: "admin", isVerified: true, ...(phone && { phone }) });
+        console.log(`✅ Created a separate admin account for ${email} (the existing ${roles} account is untouched)`);
+        await mongoose.disconnect();
+        return;
+      }
       if (!promote) {
-        fail(`${email} already exists as: ${roles}. Refusing to add a second account under the same email (login would be ambiguous). Re-run with --promote to convert it to an admin, or use a different email.`);
+        fail(`${email} already exists as: ${roles}. Refusing to add a second account under the same email by default. Re-run with --separate to add an admin alongside it (keeps the existing account), or --promote to convert it into the admin instead, or use a different email.`);
       }
       const u = existing[0];
       u.role = "admin";

@@ -39,8 +39,20 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email||!password) return res.status(400).json({ success:false, message:"Please provide email and password" });
-    const user = await User.findOne({ email }).select("+password");
-    if (!user || !(await user.comparePassword(password))) return res.status(401).json({ success:false, message:"Invalid email or password" });
+    // An email can belong to more than one account (one per role — e.g.
+    // a Google-linked owner and a separate admin on the same address).
+    // findOne({ email }) would just take whichever came first and then
+    // fail the password check against the wrong one, locking the admin
+    // out. Look at every account with this email and sign in the one
+    // whose password actually matches; admin is tried first since this
+    // endpoint is the admin page's login.
+    const candidates = await User.find({ email }).select("+password");
+    candidates.sort((a, b) => (b.role === "admin") - (a.role === "admin"));
+    let user = null;
+    for (const c of candidates) {
+      if (await c.comparePassword(password)) { user = c; break; }
+    }
+    if (!user) return res.status(401).json({ success:false, message:"Invalid email or password" });
     if (!user.isActive) return res.status(401).json({ success:false, message:"Account deactivated. Contact support." });
     user.lastLogin = Date.now();
     await user.save({ validateBeforeSave:false });
