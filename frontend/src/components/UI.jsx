@@ -1,4 +1,5 @@
 import { useState, useEffect, useId } from "react";
+import { createPortal } from "react-dom";
 import { Home, Search, BookOpen, User, ArrowLeft, CheckCircle, AlertCircle, X, MapPin, LocateFixed, Star, LayoutDashboard, ListOrdered, MessageCircle, MoreHorizontal } from "lucide-react";
 import { C } from "../constants";
 
@@ -122,9 +123,13 @@ const NAV_ICONS = {
   more:      { Icon: MoreHorizontal,  label:"More"      },
 };
 
+// Rendered into document.body rather than inside the screen: every screen
+// is keyed and fades in, so a nav living inside it was remounted and faded
+// back in from invisible on every tab switch (and a lingering transform on
+// the screen could stop position:fixed from sticking to the viewport).
 export function BottomNav({ tabs, active, onChange }) {
-  return (
-    <div className="bottom-nav" style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:C.card, display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.07)", borderTopLeftRadius:"var(--radius-xl)", borderTopRightRadius:"var(--radius-xl)", zIndex:100 }}>
+  return createPortal(
+    <div className="bottom-nav" style={{ fontFamily:"'Nunito',sans-serif", position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:C.card, display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.07)", borderTopLeftRadius:"var(--radius-xl)", borderTopRightRadius:"var(--radius-xl)", zIndex:100 }}>
       {tabs.map(([,,key]) => {
         const { Icon, label } = NAV_ICONS[key] || { Icon:Home, label:key };
         const isActive = active === key;
@@ -137,7 +142,8 @@ export function BottomNav({ tabs, active, onChange }) {
           </div>
         );
       })}
-    </div>
+    </div>,
+    document.body
   );
 }
 
