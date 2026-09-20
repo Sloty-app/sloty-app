@@ -1721,10 +1721,10 @@ export default function CustomerApp() {
                 const isActive = selCat?.id===cat.id;
                 return (
                   <div key={cat.id} onClick={() => {setSelGroup(group);setSelCat(cat);setSearch("");setScreen("stores");fetchStores();}} style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:8, cursor:"pointer" }}>
-                    <div style={{ width:80, height:80, borderRadius:22, background:"#FFFFFF", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:isActive?`0 8px 24px ${cat.color}55`:"0 2px 12px rgba(0,0,0,0.10)", transition:"all 0.2s", border:isActive?`2.5px solid ${cat.color}`:"2px solid transparent" }}>
-                      <CategoryIllustration categoryId={cat.id} size={66} />
+                    <div className="cat-art" style={{ width:96, height:96, display:"flex", alignItems:"center", justifyContent:"center", transition:"transform 0.2s var(--ease)", transform:isActive?"scale(1.08)":"none", filter:isActive?`drop-shadow(0 10px 14px ${cat.color}66)`:"drop-shadow(0 8px 10px rgba(30,20,60,0.16))" }}>
+                      <CategoryIllustration categoryId={cat.id} size={92} />
                     </div>
-                    <span style={{ fontSize:11, fontWeight:800, color:isActive?cat.color:C.text, textAlign:"center", width:84, lineHeight:1.4 }}>{cat.name}</span>
+                    <span style={{ fontSize:12, fontWeight:800, color:isActive?cat.color:C.text, textAlign:"center", width:96, lineHeight:1.35 }}>{cat.name}</span>
                   </div>
                 );
               })}
