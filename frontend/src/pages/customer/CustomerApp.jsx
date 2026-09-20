@@ -612,6 +612,13 @@ export default function CustomerApp() {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
+  // Closing from the UI steps back through history instead of pushing a new
+  // "closed" entry — otherwise the open entry stays behind it and a back
+  // swipe re-opens the assistant.
+  const closeAssistant = () => {
+    if (window.history.state?.showAssistant) window.history.back();
+    else setShowAssistant(false);
+  };
   const [reportCategory, setReportCategory] = useState("booking_issue");
   const [reportSubject,  setReportSubject]  = useState("");
   const [reportMessage,  setReportMessage]  = useState("");
@@ -1828,7 +1835,7 @@ export default function CustomerApp() {
           for; if the chunk is still loading at the exact moment someone
           taps the launcher, they see nothing for a beat, not broken UI. */}
       <Suspense fallback={null}>
-        <BookingAssistant open={showAssistant} onClose={() => setShowAssistant(false)} />
+        <BookingAssistant open={showAssistant} onClose={closeAssistant} />
       </Suspense>
 
       <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />

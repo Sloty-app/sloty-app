@@ -1,4 +1,4 @@
-import { useState, useEffect, useId } from "react";
+import { useState, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Home, Search, BookOpen, User, ArrowLeft, CheckCircle, AlertCircle, X, MapPin, LocateFixed, Star, LayoutDashboard, ListOrdered, MessageCircle, MoreHorizontal } from "lucide-react";
 import { C } from "../constants";
@@ -221,17 +221,25 @@ export function MapPicker({ onSelect, initialCity="" }) {
   );
 }
 
+// Rendered into document.body (like BottomNav) so no ancestor's transform,
+// overflow or stacking context can misplace or hide it. The backdrop ignores
+// taps for a moment after opening: on touch phones the tap that opened the
+// sheet can be followed by a stray click that lands on the fresh backdrop
+// and closes it again before it was ever seen.
 export function BottomSheet({ open, onClose, title, children }) {
+  const openedAt = useRef(0);
+  useEffect(() => { if (open) openedAt.current = Date.now(); }, [open]);
   if (!open) return null;
-  return (
+  return createPortal(
     <>
-      <div className="bottom-sheet__backdrop" onClick={onClose} />
+      <div className="bottom-sheet__backdrop" onClick={() => { if (Date.now() - openedAt.current > 400) onClose(); }} />
       <div className="bottom-sheet">
         <div className="bottom-sheet__handle" />
         {title && <h3 style={{ fontSize: 17, fontWeight: 900, color: C.text, marginBottom: 16 }}>{title}</h3>}
         {children}
       </div>
-    </>
+    </>,
+    document.body
   );
 }
 
