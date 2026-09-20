@@ -8,6 +8,17 @@ const mongoose = require("mongoose");
 const User  = require("../models/User");
 const Store = require("../models/Store");
 
+// This script DELETES every user and store before reseeding. Pointing
+// it at a real (Atlas) database by accident — easy to do when
+// MONGO_URI in .env is switched to production for a one-off task —
+// would wipe live data, so it refuses anything that isn't a local
+// database unless you explicitly pass --i-know-this-wipes-the-database.
+const isLocalDb = /^mongodb:\/\/(127\.0\.0\.1|localhost)[:/]/.test(process.env.MONGO_URI || "");
+if (!isLocalDb && !process.argv.includes("--i-know-this-wipes-the-database")) {
+  console.error("❌ Refusing to seed: MONGO_URI is not a local database. This script deletes all users and stores.");
+  process.exit(1);
+}
+
 const seed = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI);

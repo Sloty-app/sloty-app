@@ -124,7 +124,7 @@ const NAV_ICONS = {
 
 export function BottomNav({ tabs, active, onChange }) {
   return (
-    <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:C.card, display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.07)", borderTopLeftRadius:"var(--radius-xl)", borderTopRightRadius:"var(--radius-xl)", zIndex:100 }}>
+    <div className="bottom-nav" style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:C.card, display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.07)", borderTopLeftRadius:"var(--radius-xl)", borderTopRightRadius:"var(--radius-xl)", zIndex:100 }}>
       {tabs.map(([,,key]) => {
         const { Icon, label } = NAV_ICONS[key] || { Icon:Home, label:key };
         const isActive = active === key;

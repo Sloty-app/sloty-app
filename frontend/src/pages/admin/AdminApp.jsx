@@ -150,7 +150,7 @@ function StoreDetailModal({ storeId, onClose, onRemoved }) {
 
               {/* Key analytics */}
               <h4 style={{ fontSize:13, fontWeight:900, color:"rgba(255,255,255,0.5)", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>Performance</h4>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:16 }}>
+              <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:16 }}>
                 <StatCard icon={IndianRupee}    value={`₹${stats.totalRevenue}`}   label="Total Revenue"       color={C.green} />
                 <StatCard icon={TrendingUp}     value={`₹${stats.recentRevenue}`}  label="Revenue (30 days)"   color={C.blue}  />
                 <StatCard icon={ClipboardList}  value={stats.totalBookings}        label="Total Bookings"      color={C.pri}   />
@@ -294,7 +294,7 @@ function CustomerDetailModal({ customerId, onClose }) {
 
               {/* Key stats */}
               <h4 style={{ fontSize:13, fontWeight:900, color:"rgba(255,255,255,0.5)", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>Booking Activity</h4>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:16 }}>
+              <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:16 }}>
                 <StatCard icon={ClipboardList} value={stats.totalBookings}       label="Total Bookings"     color={C.pri}   />
                 <StatCard icon={CheckCircle}   value={stats.completed}           label="Completed"          color={C.green} />
                 <StatCard icon={XCircle}       value={stats.cancelled}           label="Cancelled"          color={C.red}   />
@@ -1152,7 +1152,7 @@ export default function AdminApp() {
         </>
       )}
 
-      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:"#181828", display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.3)", borderTopLeftRadius:24, borderTopRightRadius:24, zIndex:100 }}>
+      <div className="bottom-nav bottom-nav--dark" style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:"#181828", display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.3)", borderTopLeftRadius:24, borderTopRightRadius:24, zIndex:100 }}>
         {[...primaryTabs, { key:"more", Icon:MoreHorizontal, label:"More", badge:0 }].map(({ key, Icon, label }) => {
           const isActive = key==="more" ? isMoreTab : tab===key;
           const badgeCount = key==="approvals" ? pending.length : key==="settlements" ? pendingSettlements.length : 0;

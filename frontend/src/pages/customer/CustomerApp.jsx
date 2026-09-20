@@ -1599,7 +1599,7 @@ export default function CustomerApp() {
 
   // ── Home ──────────────────────────────────────────────────────────────────
   if (screen==="home" && tab==="home") return (
-    <div key="home" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
+    <div key="home" className="screen-enter desk-wide" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
       {ToastEl}
       <div style={{ background:`linear-gradient(135deg,${C.pri} 0%,${C.priDark} 100%)`, padding:"48px 20px 20px", borderBottomLeftRadius:36, borderBottomRightRadius:36 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
@@ -1708,6 +1708,7 @@ export default function CustomerApp() {
         {/* Grouped categories — each section heading is a group (Health,
             Mechanic & Repair, Beauty & Grooming), with the individual
             categories inside it shown as their own icons underneath. */}
+        <div className="cat-groups">
         {GROUPS.map(group => (
           <div key={group.id} style={{ marginBottom:22 }}>
             <div style={{ display:"flex", alignItems:"center", gap:8, padding:"0 16px", marginBottom:14 }}>
@@ -1730,6 +1731,7 @@ export default function CustomerApp() {
             </div>
           </div>
         ))}
+        </div>
 
         {/* Swiggy/Zomato-style momentum before the full list: live
             deals first, then quick horizontal rails you can flick
@@ -1764,7 +1766,7 @@ export default function CustomerApp() {
               </button>
             </div>
           ) : Object.entries(storesByArea).slice(0,3).map(([area,areaStores]) => (
-            <div key={area}>
+            <div key={area} className="store-grid store-group">
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, marginTop:4 }}>
                 <MapPin size={14} color={C.pri} />
                 <h3 style={{ fontSize:15, fontWeight:900, color:C.text }}>{area}</h3>
@@ -1838,7 +1840,7 @@ export default function CustomerApp() {
 
   // ── Stores List ───────────────────────────────────────────────────────────
   if (screen==="stores") return (
-    <div key="stores" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
+    <div key="stores" className="screen-enter desk-wide" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
       {ToastEl}
       <TopBar title={selCat?.name||selGroup?.name||"All Services"} sub={userArea||userCity||"Near You"} onBack={() => {setScreen("home");setTab("home");setSelCat(null);setSelGroup(null);setSearch("");}} />
       <div style={{ padding:"14px 16px 0" }}>
@@ -1898,7 +1900,7 @@ export default function CustomerApp() {
             <p style={{ color:C.muted, fontWeight:700 }}>No stores found</p>
           </div>
         ) : Object.entries(storesByArea).map(([area,areaStores]) => (
-          <div key={area}>
+          <div key={area} className="store-grid store-group">
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, marginTop:8 }}>
               <MapPin size={13} color={C.pri} />
               <h3 style={{ fontSize:14, fontWeight:900, color:C.text }}>{area}</h3>
@@ -1926,10 +1928,10 @@ export default function CustomerApp() {
 
   // ── Favorites ─────────────────────────────────────────────────────────────
   if (screen==="favorites") return (
-    <div key="favorites" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
+    <div key="favorites" className="screen-enter desk-wide" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
       {ToastEl}
       <TopBar title="My Favorites" sub={`${favStores.filter(s=>favoriteIds.has(s._id)).length} saved stores`} onBack={() => {setScreen("home");setTab("profile");}} />
-      <div style={{ padding:"16px" }}>
+      <div className="store-grid" style={{ padding:"16px" }}>
         {favLoading ? <Loader skeleton /> : favStores.filter(s=>favoriteIds.has(s._id)).length===0 ? (
           <div style={{ textAlign:"center", padding:"60px 20px" }}>
             <div style={{ width:72, height:72, borderRadius:24, background:C.pri+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
@@ -2676,13 +2678,13 @@ export default function CustomerApp() {
 
   // ── My Bookings ───────────────────────────────────────────────────────────
   if (tab==="bookings") return (
-    <div key="bookings" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
+    <div key="bookings" className="screen-enter desk-wide" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:100 }}>
       {ToastEl}
       {ReviewSheet}
       {CancelSheet}
       {RescheduleSheet}
       <TopBar title="My Bookings" sub={bookingsLoading ? "Loading..." : `${myBookings.length} bookings`} onBack={() => setTab("home")} />
-      <div style={{ padding:16 }}>
+      <div className="store-grid" style={{ padding:16 }}>
         {bookingsLoading ? <Loader skeleton /> : myBookings.length===0 ? (
           <div style={{ textAlign:"center", padding:"60px 20px" }}>
             <div style={{ width:72, height:72, borderRadius:24, background:C.pri+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>

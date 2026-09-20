@@ -169,6 +169,71 @@ html, body {
   }
 }
 
+/* Logged-in app on desktop (>=1024px): the bottom tab bar becomes a
+   left sidebar, the shell widens, list screens (home, stores, favorites,
+   bookings — marked .desk-wide) use the whole page with multi-column
+   grids, and every other screen (booking flow, store detail, profile,
+   ...) stays a comfortable centered column so nothing stretches across
+   a 1400px window. Phones and tablets under 1024px are untouched. */
+:root { --desk-max: 1240px; --rail-w: 96px; }
+
+@media (min-width: 1024px) {
+  html.app-desktop, html.app-desktop body { background: var(--bg); }
+  html.app-desktop.role-admin, html.app-desktop.role-admin body { background: #0F0F1A; }
+  /* Bottom sheets and sticky action bars keep a phone-ish width, centered */
+  html.app-desktop { --app-width: 720px; --content-width: none; }
+
+  .app-shell--main {
+    max-width: var(--desk-max);
+    padding-left: var(--rail-w);
+    background: transparent;
+    box-shadow: none;
+  }
+  /* Focused screens stay narrow and centered. They are shifted left by
+     half the rail so they line up with the (viewport-centered) sticky
+     action bars and sheets rather than the space right of the rail. */
+  .app-shell--main .screen-enter {
+    max-width: 760px;
+    margin: 0 auto;
+    position: relative;
+    left: calc(var(--rail-w) / -2);
+  }
+  .app-shell--main .screen-enter.desk-wide { max-width: none; left: 0; }
+
+  /* Sidebar */
+  .bottom-nav {
+    top: 0 !important;
+    bottom: 0 !important;
+    left: max(0px, calc((100vw - var(--desk-max)) / 2)) !important;
+    transform: none !important;
+    width: var(--rail-w) !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    gap: 6px;
+    padding: 28px 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border-right: 1px solid var(--border);
+  }
+  .bottom-nav > div { flex: none !important; width: 100%; padding: 8px 0; }
+  .bottom-nav--dark { border-right-color: rgba(255, 255, 255, 0.08); }
+
+  /* Multi-column grids for store cards, booking cards, category groups */
+  .store-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+  .store-grid > * { margin-bottom: 0 !important; }
+  .store-group > :first-child { grid-column: 1 / -1; }
+  .store-grid > :only-child { grid-column: 1 / -1; }
+  /* animated wrappers with transform would become the containing block of the fixed sidebar */
+  .app-shell--main .screen-enter { animation: none !important; transform: none !important; }
+  .stat-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 16px !important; }
+  .cat-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 28px; }
+}
+
 ::-webkit-scrollbar { display: none; }
 
 ::selection { background: var(--pri); color: #fff; }

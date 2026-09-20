@@ -69,13 +69,21 @@ function Shell({ children }) {
   const { user, checking } = useAuth();
   const { pathname } = useLocation();
   const isEntryPage = !user && !checking && (pathname === "/" || pathname.startsWith("/auth/"));
+  // Logged-in app: on desktop the bottom tab bar becomes a left sidebar
+  // and list screens use the wider page (see index.css). role-* lets
+  // the admin portal keep its own dark page background.
+  const isMain = !!user && !checking;
+  const role = user?.role;
 
   useEffect(() => {
-    document.documentElement.classList.toggle("entry-page", isEntryPage);
-    return () => document.documentElement.classList.remove("entry-page");
-  }, [isEntryPage]);
+    const el = document.documentElement;
+    el.classList.toggle("entry-page", isEntryPage);
+    el.classList.toggle("app-desktop", isMain);
+    ["customer", "owner", "admin"].forEach(r => el.classList.toggle(`role-${r}`, isMain && role === r));
+    return () => { el.classList.remove("entry-page", "app-desktop", "role-customer", "role-owner", "role-admin"); };
+  }, [isEntryPage, isMain, role]);
 
-  return <div className={`app-shell${isEntryPage ? " app-shell--entry" : ""}`}>{children}</div>;
+  return <div className={`app-shell${isEntryPage ? " app-shell--entry" : ""}${isMain ? " app-shell--main" : ""}`}>{children}</div>;
 }
 
 export default function App() {

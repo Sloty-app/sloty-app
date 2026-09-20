@@ -1282,7 +1282,7 @@ export default function OwnerApp() {
                 <Bell size={13} /> Recent Activity
               </button>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:20 }}>
+            <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:20 }}>
               <StatCard icon={CalendarDays}  value={todayBookings.length} label="Today's Bookings" color={C.blue}  onClick={() => setTab("bookings")} />
               <StatCard icon={CheckCircle}   value={completed}       label="Completed"         color={C.green} onClick={() => setTab("history")} />
               <StatCard icon={Users}         value={waiting}         label="Waiting"           color={C.red}   onClick={() => setTab("queue")} />
