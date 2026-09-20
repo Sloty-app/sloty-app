@@ -12,7 +12,6 @@ import CategoryIllustration from "../../components/CategoryArt";
 // that belongs in the bundle every customer downloads just to see the
 // home screen.
 const BookingAssistant = lazy(() => import("../../components/BookingAssistant"));
-import AssistantFab from "../../components/AssistantFab";
 const CustomerChatModal = lazy(() => import("../../components/CustomerChatModal"));
 const ReferralScreen = lazy(() => import("../../components/ReferralScreen"));
 const PrivacyPolicy = lazy(() => import("../PrivacyPolicy"));
@@ -1613,8 +1612,13 @@ export default function CustomerApp() {
             <p style={{ fontSize:12, color:"rgba(255,255,255,0.7)", marginBottom:1 }}>Good day,</p>
             <h1 style={{ fontSize:22, fontWeight:900, color:"#fff", textShadow:"0 2px 8px rgba(0,0,0,0.18)" }}>{user.name?.split(" ")[0]}</h1>
           </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+          <button onClick={() => setShowAssistant(true)} aria-label="Ask Sloty Assistant" className="pressable" style={{ display:"flex", alignItems:"center", gap:6, height:38, padding:"0 13px", borderRadius:20, background:"rgba(255,255,255,0.22)", border:"1.5px solid rgba(255,255,255,0.4)", color:"#fff", fontSize:13, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
+            <Sparkles size={15} color="#fff" /> Ask AI
+          </button>
           <div onClick={() => {setTab("profile");setScreen("home");}} style={{ width:46, height:46, borderRadius:"50%", background:"rgba(255,255,255,0.2)", border:"2px solid rgba(255,255,255,0.4)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"#fff", fontWeight:900, fontSize:18 }}>
             {user.name?.charAt(0).toUpperCase()}
+          </div>
           </div>
         </div>
         <div className="search-wrap" style={{ position:"relative" }}>
@@ -1739,7 +1743,7 @@ export default function CustomerApp() {
               <group.Icon size={16} color={group.color} strokeWidth={2} />
               <h3 style={{ fontSize:14, fontWeight:900, color:C.text }}>{group.name}</h3>
             </div>
-            <div style={{ display:"flex", gap:12, overflowX:"auto", paddingLeft:16, paddingRight:16, paddingBottom:8, scrollbarWidth:"none" }}>
+            <div className="cat-row" style={{ display:"flex", gap:12, overflowX:"auto", paddingLeft:16, paddingBottom:8, scrollbarWidth:"none" }}>
               {group.categoryIds.map(catId => {
                 const cat = getCat(catId);
                 const isActive = selCat?.id===cat.id;
@@ -1752,6 +1756,7 @@ export default function CustomerApp() {
                   </div>
                 );
               })}
+              <div aria-hidden="true" style={{ flex:"0 0 4px" }} />{/* end spacer: padding-right is ignored at the end of a scrolling flex row */}
             </div>
           </div>
         ))}
@@ -1815,8 +1820,6 @@ export default function CustomerApp() {
         </div>
       </div>
 
-      {/* Floating AI booking assistant launcher — draggable, see AssistantFab */}
-      <AssistantFab onOpen={() => setShowAssistant(true)} />
       {/* fallback={null} — this is mounted unconditionally (so its chat
           history survives closing/reopening within the session, same as
           before lazy-loading), so a visible fallback would flash on

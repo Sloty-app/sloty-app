@@ -169,6 +169,10 @@ html, body {
   }
 }
 
+/* Category rows on Home: horizontal swipe, contained so a sideways swipe
+   never drags the whole page, and pannable vertically too. */
+.cat-row { overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+
 /* Logged-in app on desktop (>=1024px): the bottom tab bar becomes a
    left sidebar, the shell widens, list screens (home, stores, favorites,
    bookings — marked .desk-wide) use the whole page with multi-column
