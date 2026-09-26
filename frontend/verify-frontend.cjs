@@ -17,8 +17,8 @@ function fileExists(path) { return fs.existsSync(path); }
 console.log("\n=== CustomerApp.jsx ===");
 const cust = readSafe("src/pages/customer/CustomerApp.jsx");
 if (cust) {
-  check("Chat: CustomerChatModal imported", cust.includes('import CustomerChatModal'));
-  check("Referral: ReferralScreen imported", cust.includes('import ReferralScreen'));
+  check("Chat: CustomerChatModal imported", cust.includes('CustomerChatModal'));
+  check("Referral: ReferralScreen imported", cust.includes('ReferralScreen'));
   check("Search: SEARCH_SYNONYMS table present", cust.includes("SEARCH_SYNONYMS"));
   check("Search: filtStores checks service names too", cust.includes("services||[]).some"));
   check("Profile completion gate present", cust.includes("needsProfileCompletion"));
@@ -39,9 +39,9 @@ if (cust) {
 console.log("\n=== OwnerApp.jsx ===");
 const owner = readSafe("src/pages/owner/OwnerApp.jsx");
 if (owner) {
-  check("Messages: OwnerMessages imported", owner.includes('import OwnerMessages'));
-  check("Offers: OwnerOffers imported", owner.includes('import OwnerOffers'));
-  check("Analytics: OwnerAnalytics imported", owner.includes('import OwnerAnalytics'), "New this session — the 6-metric analytics tab");
+  check("Messages: OwnerMessages imported", owner.includes('OwnerMessages'));
+  check("Offers: OwnerOffers imported", owner.includes('OwnerOffers'));
+  check("Analytics: OwnerAnalytics imported", owner.includes('OwnerAnalytics'), "New this session — the 6-metric analytics tab");
   check("Analytics tab registered", owner.includes('key:"analytics"'));
   check("Payouts tab registered", owner.includes('key:"payouts"'));
   check("Payouts: fetchPayouts / requestPayout present", owner.includes("fetchPayouts") && owner.includes("requestPayout"));

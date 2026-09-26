@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../api";
 import { C, CATS, getCat } from "../../constants";
-import { Badge, Card, Btn, Input, Select, Loader, MapPicker, LocationDetector, BottomSheet, BottomNav } from "../../components/UI";
+import { Badge, Card, Btn, Input, Select, Loader, MapPicker, LocationDetector, BottomSheet, BottomNav, OwnerDashboardSkeleton, EmptyState } from "../../components/UI";
 // Lazy-loaded — each ships as its own chunk instead of bloating the
 // single OwnerApp bundle every owner downloads on login regardless of
 // which tabs they actually visit. OwnerAnalytics alone pulls in
@@ -1046,8 +1046,16 @@ export default function OwnerApp() {
   };
 
   if (loading) return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, fontFamily:"'Nunito',sans-serif" }}>
-      <Loader text="Loading your store..." />
+    <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:80 }}>
+      <div style={{ background:`linear-gradient(135deg,${C.sec},#2D1B4E)`, padding:"44px 20px 24px", borderBottomLeftRadius:28, borderBottomRightRadius:28 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div>
+            <p style={{ fontSize:10, color:"rgba(255,255,255,0.4)", letterSpacing:2 }}>OWNER DASHBOARD</p>
+            <h2 style={{ fontSize:20, fontWeight:900, color:"#fff", marginTop:4 }}>Loading Store...</h2>
+          </div>
+        </div>
+      </div>
+      <OwnerDashboardSkeleton />
     </div>
   );
 
@@ -1391,10 +1399,16 @@ export default function OwnerApp() {
               ))}
             </div>
             {queueBookings.length===0 ? (
-              <div style={{ textAlign:"center", padding:"40px 0" }}>
-                <div style={{ width:56, height:56, borderRadius:18, background:C.green+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 12px" }}><CheckCircle size={24} color={C.green} /></div>
-                <p style={{ color:C.muted, fontSize:14, fontWeight:700 }}>No bookings today yet</p>
-              </div>
+              <EmptyState
+                icon={CheckCircle}
+                iconColor={C.green}
+                badgeText={myStore?.isOpen ? "Store is Open" : "Store is Closed"}
+                badgeColor={myStore?.isOpen ? C.green : C.red}
+                title="Queue is currently empty"
+                description={myStore?.isOpen ? "No appointments or walk-in customers waiting right now. When customers arrive or book online, their tokens will appear here." : "Your store is currently closed. Turn on 'Open Store' in your Dashboard to start accepting appointments."}
+                actionLabel="+ Add Walk-In Customer"
+                onAction={() => setShowWalkInModal(true)}
+              />
             ) : queueBookings.map(b => (
               <Card key={b._id}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
@@ -1527,10 +1541,14 @@ export default function OwnerApp() {
               const q = bookingSearch.trim().toLowerCase();
               const visibleBookings = q ? bookings.filter(b => (b.customerName||"").toLowerCase().includes(q) || (b.customerPhone||"").includes(q)) : bookings;
               if (visibleBookings.length === 0) return (
-                <div style={{ textAlign:"center", padding:"40px 0" }}>
-                  <div style={{ width:56, height:56, borderRadius:18, background:C.blue+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 12px" }}><CalendarDays size={24} color={C.blue} /></div>
-                  <p style={{ color:C.muted, fontWeight:700 }}>{q ? "No bookings match your search" : "No upcoming bookings"}</p>
-                </div>
+                <EmptyState
+                  icon={CalendarDays}
+                  iconColor={C.blue}
+                  title={q ? "No bookings match your search" : "No upcoming bookings"}
+                  description={q ? `No bookings found matching "${bookingSearch}". Try searching by a different name or mobile number.` : "You don't have any bookings scheduled in the next 7 days."}
+                  actionLabel={q ? "Clear Search" : undefined}
+                  onAction={() => setBookingSearch("")}
+                />
               );
               const tomorrow = getISTDateString(getNext7Days()[1]);
               const byDate = visibleBookings.reduce((acc, b) => {

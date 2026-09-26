@@ -1,0 +1,6 @@
+{
+  "name": "Sloty",
+  "description": "Sloty - Queue & Appointment Booking App for customers, store owners, and administrators.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

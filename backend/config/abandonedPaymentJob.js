@@ -17,7 +17,7 @@ const Booking = require("../models/Booking");
 const SlotCapacity = require("../models/SlotCapacity");
 const { emitToRoom } = require("./socket");
 
-const GRACE_PERIOD_MINUTES = 20;
+const GRACE_PERIOD_MINUTES = 5;
 
 async function runAbandonedPaymentCleanup() {
   const cutoff = new Date(Date.now() - GRACE_PERIOD_MINUTES * 60 * 1000);

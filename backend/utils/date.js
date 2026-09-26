@@ -3,11 +3,16 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 const getISTNow = () => new Date(Date.now() + IST_OFFSET_MS);
 
-const getISTDateString = (date = getISTNow()) => {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(date.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+const getISTDateString = (date = new Date()) => {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(date);
+  } catch {
+    const d = new Date((date instanceof Date ? date.getTime() : Date.now()) + IST_OFFSET_MS);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
 };
 
 const addDaysIST = (days) => {

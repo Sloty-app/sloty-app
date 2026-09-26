@@ -27,18 +27,20 @@ const timeToMinutes = (t) => {
   return h * 60 + m;
 };
 
-const generateSlots = (open, close, duration) => {
+const generateSlots = (open, close, interval, serviceDuration) => {
   const slots = [];
   let [h, m] = open.split(":").map(Number);
   const [ch, cm] = close.split(":").map(Number);
-  const closeTotal = ch*60+cm;
-  while (h*60+m < closeTotal) {
-    const period = h>=12?"PM":"AM";
-    const dh = h>12?h-12:h===0?12:h;
-    const dm = m===0?"00":String(m).padStart(2,"0");
+  const closeTotal = ch * 60 + cm;
+  const duration = serviceDuration || interval;
+  // A slot is only offered if the service finishes at or before store closing time
+  while (h * 60 + m + duration <= closeTotal) {
+    const period = h >= 12 ? "PM" : "AM";
+    const dh = h > 12 ? h - 12 : h === 0 ? 12 : h;
+    const dm = m === 0 ? "00" : String(m).padStart(2, "0");
     slots.push(`${dh}:${dm} ${period}`);
-    m += duration;
-    if (m>=60){ h+=Math.floor(m/60); m=m%60; }
+    m += interval;
+    if (m >= 60) { h += Math.floor(m / 60); m = m % 60; }
   }
   return slots;
 };
@@ -51,8 +53,9 @@ exports.getAvailableSlots = async (req, res) => {
     const store = await Store.findById(req.params.storeId);
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
 
-    const duration = parseInt(req.query.duration) || store.slotDuration || 30;
-    const allSlots = generateSlots(store.workingHours.open, store.workingHours.close, duration);
+    const stepInterval = store.slotDuration || 30;
+    const duration = parseInt(req.query.duration) || stepInterval;
+    const allSlots = generateSlots(store.workingHours.open, store.workingHours.close, stepInterval, duration);
 
     const breakRanges = (store.breakTimes || []).map(b => {
       const [bh, bm] = b.open.split(":").map(Number);
@@ -111,9 +114,8 @@ exports.getAvailableSlots = async (req, res) => {
       const isPast   = isToday && slotTotal <= currentTotal;
       const slotEnd  = slotTotal + duration;
       const overlappingCount = bookedRanges.filter(r => slotTotal < r.end && slotEnd > r.start).length;
-      const isFull   = overlappingCount >= capacity;
-      const isBreak  = breakRanges.some(r => slotTotal >= r.start && slotTotal < r.end);
-      const breakLabel = breakRanges.find(r => slotTotal >= r.start && slotTotal < r.end)?.label || "Break";
+      const isBreak  = breakRanges.some(r => slotTotal < r.end && slotEnd > r.start);
+      const breakLabel = breakRanges.find(r => slotTotal < r.end && slotEnd > r.start)?.label || "Break";
       const isBlocked = blockedSet.has(time);
 
       return {
@@ -191,6 +193,33 @@ exports.createBooking = async (req, res) => {
     const totalPrice    = serviceBreakdown.reduce((sum, s) => sum + s.price, 0);
     const totalDuration = serviceBreakdown.reduce((sum, s) => sum + s.duration, 0);
     const combinedName  = serviceBreakdown.map(s => s.name).join(" + ");
+
+    // Closing time & break boundary enforcement
+    const [openH, openM] = store.workingHours.open.split(":").map(Number);
+    const [closeH, closeM] = store.workingHours.close.split(":").map(Number);
+    const storeOpenMinutes = openH * 60 + openM;
+    const storeCloseMinutes = closeH * 60 + closeM;
+    const slotStartMinutes = timeToMinutes(timeSlot);
+
+    if (slotStartMinutes < storeOpenMinutes || slotStartMinutes + totalDuration > storeCloseMinutes) {
+      return res.status(400).json({
+        success: false,
+        message: `Selected services take ${totalDuration} mins, which would exceed store closing time (${store.workingHours.close}). Please choose an earlier time.`
+      });
+    }
+
+    const breakRanges = (store.breakTimes || []).map(b => {
+      const [bh, bm] = b.open.split(":").map(Number);
+      const [ch, cm] = b.close.split(":").map(Number);
+      return { start: bh * 60 + bm, end: ch * 60 + cm, label: b.label || "Break" };
+    });
+    const overlappingBreak = breakRanges.find(r => slotStartMinutes < r.end && (slotStartMinutes + totalDuration) > r.start);
+    if (overlappingBreak) {
+      return res.status(400).json({
+        success: false,
+        message: `This slot overlaps store ${overlappingBreak.label}. Please select another time.`
+      });
+    }
 
     // Apply an offer discount if one was selected — always recomputed
     // server-side from the real offer record, never trusting a
@@ -364,15 +393,10 @@ exports.createBooking = async (req, res) => {
 
     res.status(201).json({ success:true, message:`Slot booked! Your token: ${tokenNumber} 🎉`, booking: populated, walletDeducted });
   } catch (err) {
-    // Duplicate-key error from the unique index means two requests raced
+    // Duplicate-key error from unique indexes means two requests raced
     // for the same slot — the second one lost cleanly at the DB level.
-    if (err.code === 11000 && err.message.includes("no_double_booking")) {
-      return res.status(400).json({ success:false, message:"This slot was just taken by someone else. Please choose another time." });
-    }
-    // Same race-condition pattern, but for pooled-capacity stores —
-    // this fires when the slot's configured capacity is already full.
-    if (err.code === 11000 && err.message.includes("one_counter_per_slot")) {
-      return res.status(400).json({ success:false, message:"This slot is fully booked. Please choose another time." });
+    if (err.code === 11000) {
+      return res.status(400).json({ success:false, message:"This slot was just taken by another customer. Please choose another time." });
     }
     console.error("BOOKING ERROR:", err.message);
     res.status(500).json({ success:false, message:"Server error", error: process.env.NODE_ENV==="development"?err.message:undefined });

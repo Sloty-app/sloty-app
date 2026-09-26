@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react"
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../api";
 import { C, CATS, getCat, GROUPS, getGroupForCategory, DAY, MON } from "../../constants";
-import { Badge, Card, Btn, Input, TopBar, BottomNav, Loader, Toast, MapPicker, LocationDetector, SlotPicker, BottomSheet, StarRating } from "../../components/UI";
+import { Badge, Card, Btn, Input, TopBar, BottomNav, Loader, Toast, MapPicker, LocationDetector, SlotPicker, BottomSheet, StarRating, StoreCardSkeleton, StoreListSkeleton, BookingCardSkeleton, BookingListSkeleton, StoreDetailSkeleton, EmptyState } from "../../components/UI";
 import StoreCard from "../../components/StoreCard";
 import BookingStepper from "../../components/BookingStepper";
 import CategoryIllustration from "../../components/CategoryArt";
@@ -542,6 +542,7 @@ export default function CustomerApp() {
   // step instead of jumping straight to the confirmation screen.
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [pendingPayment, setPendingPayment] = useState(null);
+  const [paymentTimer, setPaymentTimer] = useState(300);
   const [payingNow, setPayingNow] = useState(false);
   const [switchingToCash, setSwitchingToCash] = useState(false);
   const [toast,         setToast]        = useState(null);
@@ -1059,6 +1060,26 @@ export default function CustomerApp() {
     if (useWallet) setUseWallet(false);
     if (selectedOffer) setSelectedOffer(null);
   }, [hasVariablePriceSelected]);
+
+  useEffect(() => {
+    if (!pendingPayment) {
+      setPaymentTimer(300);
+      return;
+    }
+    const timer = setInterval(() => {
+      setPaymentTimer(t => {
+        if (t <= 1) {
+          clearInterval(timer);
+          setPendingPayment(null);
+          showToast("Payment window expired. Your slot has been released.", "error");
+          setScreen("home");
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [pendingPayment, showToast]);
   useEffect(() => { fetchMyBookings(); }, []);
   useEffect(() => { fetchFavorites(); }, []);
   useEffect(() => { if(tab==="bookings") fetchMyBookings(); }, [tab]);
@@ -1139,11 +1160,11 @@ export default function CustomerApp() {
   // room so "X ahead of you" updates the instant something changes,
   // instead of waiting for the 20s poll.
   useEffect(() => {
-    if (tab !== "bookings" && tab !== "home") return; // home shows the live-turn strip too
     const today = getISTDateString();
     const storeIds = [...new Set(
-      myBookings.filter(b => b.status==="confirmed" && b.date===today && b.store?._id).map(b => b.store._id)
+      myBookings.filter(b => (b.status==="confirmed" || b.status==="in_progress") && b.date===today && b.store?._id).map(b => b.store._id)
     )];
+    if (storeIds.length === 0) return;
     const socket = getSocket();
     const rooms = storeIds.map(id => `store:${id}:${today}`);
     rooms.forEach(joinRoom);
@@ -1155,10 +1176,9 @@ export default function CustomerApp() {
       rooms.forEach(leaveRoom);
       socket.off("queue:update", onQueueUpdate);
     };
-  }, [tab, myBookings]);
+  }, [myBookings]);
 
   useEffect(() => {
-    if (tab !== "bookings" && tab !== "home") return;
     refreshQueuePositions(myBookings);
   }, [tab, myBookings]);
   useEffect(() => {
@@ -1350,6 +1370,46 @@ export default function CustomerApp() {
   const BOTTOM_TABS = [["","Home","home"],["","Explore","explore"],["","Bookings","bookings"],["","Profile","profile"]];
   const onNavChange = t => { setTab(t); setScreen("home"); if(t==="explore"){setSelCat(null);setSelGroup(null);setSearch("");setScreen("stores");fetchStores();} };
 
+  const todayIST = getISTDateString();
+  const activeTodayBooking = myBookings.find(b => (b.status === "confirmed" || b.status === "in_progress") && b.date === todayIST && b.store?._id);
+
+  const activeQueuePill = (activeTodayBooking && tab !== "bookings" && screen !== "booking" && screen !== "detail") ? (
+    <div
+      onClick={() => { setTab("bookings"); setScreen("home"); }}
+      style={{
+        background: "linear-gradient(135deg, #1A1A2E, #2D1B4E)",
+        color: "#fff",
+        padding: "10px 14px",
+        borderRadius: 18,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        boxShadow: "0 8px 24px rgba(26,26,46,0.3)",
+        cursor: "pointer",
+        fontFamily: "'Nunito',sans-serif",
+        border: "1px solid rgba(255,255,255,0.12)",
+        animation: "slideUp 0.3s var(--ease-spring, ease)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.green, boxShadow: `0 0 10px ${C.green}` }} />
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 900, margin: 0, color: "#fff" }}>
+            Token {activeTodayBooking.tokenNumber} • {activeTodayBooking.store?.name}
+          </p>
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: "2px 0 0" }}>
+            {activeTodayBooking.status === "in_progress"
+              ? "Service in progress! 🎯"
+              : `${queueAhead[activeTodayBooking._id] != null ? `${queueAhead[activeTodayBooking._id]} ahead of you` : "Confirmed"} • ${activeTodayBooking.timeSlot}`}
+          </p>
+        </div>
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 800, color: C.green, background: `${C.green}22`, padding: "4px 10px", borderRadius: 10 }}>
+        View Queue →
+      </span>
+    </div>
+  ) : null;
+
   const ToastEl = toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />;
 
   // ── Review bottom sheet (rendered globally, opens over any screen) ──────
@@ -1519,9 +1579,12 @@ export default function CustomerApp() {
         <div style={{ width:64, height:64, borderRadius:"50%", background:C.pri+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
           <IndianRupee size={28} color={C.pri} />
         </div>
-        <h2 style={{ fontSize:18, fontWeight:900, color:C.text, marginBottom:6 }}>Complete Payment</h2>
-        <p style={{ fontSize:13, color:C.muted, marginBottom:4 }}>Your slot is reserved for a few minutes.</p>
-        <p style={{ fontSize:26, fontWeight:900, color:C.pri, margin:"16px 0" }}>₹{(pendingPayment.order.amount/100).toFixed(0)}</p>
+        <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:paymentTimer < 60 ? C.red+"15" : "#FFF3E0", color:paymentTimer < 60 ? C.red : "#B36B00", padding:"6px 14px", borderRadius:16, fontSize:12, fontWeight:800, margin:"6px 0 10px", border:`1px solid ${paymentTimer < 60 ? C.red+"33" : "#FF980033"}` }}>
+          <Clock size={14} color={paymentTimer < 60 ? C.red : "#B36B00"} />
+          Holding your slot: {Math.floor(paymentTimer / 60)}:{String(paymentTimer % 60).padStart(2, "0")}
+        </div>
+        <p style={{ fontSize:12, color:C.muted, marginBottom:4 }}>Complete your payment to confirm your booking.</p>
+        <p style={{ fontSize:28, fontWeight:900, color:C.pri, margin:"14px 0" }}>₹{(pendingPayment.order.amount/100).toFixed(0)}</p>
 
         {pendingPayment.devMode && (
           <div style={{ background:C.acc+"15", borderRadius:12, padding:"10px 14px", marginBottom:16, textAlign:"left" }}>
@@ -1838,7 +1901,7 @@ export default function CustomerApp() {
         <BookingAssistant open={showAssistant} onClose={closeAssistant} />
       </Suspense>
 
-      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />
+      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} activeBanner={activeQueuePill} />
     </div>
   );
 
@@ -1898,11 +1961,14 @@ export default function CustomerApp() {
               onSelectStore={(s) => { setSelStore(s); setScreen("detail"); }}
             />
           </Suspense>
-        ) : loading ? <Loader skeleton /> : filtStores.length===0 ? (
-          <div style={{ textAlign:"center", padding:"40px 20px" }}>
-            <div style={{ width:56, height:56, borderRadius:18, background:C.pri+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 12px" }}><Search size={24} color={C.pri} /></div>
-            <p style={{ color:C.muted, fontWeight:700 }}>No stores found</p>
-          </div>
+        ) : loading ? <StoreListSkeleton count={3} /> : filtStores.length===0 ? (
+          <EmptyState
+            icon={Search}
+            title={search ? "No matching stores found" : "No stores in this category"}
+            description={search ? `We couldn't find any results for "${search}". Try checking your spelling or searching for another service.` : "There are no stores listed under this category right now. Check back soon or explore all stores."}
+            actionLabel={search || selCat || selGroup ? "Clear All Filters" : "Explore All Stores"}
+            onAction={() => { setSearch(""); setSelCat(null); setSelGroup(null); fetchStores(); }}
+          />
         ) : Object.entries(storesByArea).map(([area,areaStores]) => (
           <div key={area} className="store-grid store-group">
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, marginTop:8 }}>
@@ -1926,7 +1992,7 @@ export default function CustomerApp() {
           </div>
         ))}
       </div>
-      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />
+      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} activeBanner={activeQueuePill} />
     </div>
   );
 
@@ -1936,15 +2002,14 @@ export default function CustomerApp() {
       {ToastEl}
       <TopBar title="My Favorites" sub={`${favStores.filter(s=>favoriteIds.has(s._id)).length} saved stores`} onBack={() => {setScreen("home");setTab("profile");}} />
       <div className="store-grid" style={{ padding:"16px" }}>
-        {favLoading ? <Loader skeleton /> : favStores.filter(s=>favoriteIds.has(s._id)).length===0 ? (
-          <div style={{ textAlign:"center", padding:"60px 20px" }}>
-            <div style={{ width:72, height:72, borderRadius:24, background:C.pri+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
-              <Heart size={32} color={C.pri} />
-            </div>
-            <p style={{ fontSize:16, fontWeight:800, color:C.text }}>No favorites yet</p>
-            <p style={{ fontSize:13, color:C.muted, marginTop:8 }}>Tap the heart on any store to save it here</p>
-            <button onClick={() => {setTab("home");setScreen("stores");fetchStores();}} style={{ marginTop:20, padding:"12px 28px", background:`linear-gradient(135deg,${C.pri},#E0406A)`, color:"#fff", border:"none", borderRadius:14, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>Explore Stores</button>
-          </div>
+        {favLoading ? <StoreListSkeleton count={2} /> : favStores.filter(s=>favoriteIds.has(s._id)).length===0 ? (
+          <EmptyState
+            icon={Heart}
+            title="No favorites yet"
+            description="Tap the heart icon on any store to save it here for fast, one-tap bookings."
+            actionLabel="Explore Stores"
+            onAction={() => { setTab("home"); setScreen("stores"); fetchStores(); }}
+          />
         ) : favStores.filter(s=>favoriteIds.has(s._id)).map(store => (
           <StoreCard
             key={store._id}
@@ -1958,7 +2023,7 @@ export default function CustomerApp() {
           />
         ))}
       </div>
-      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />
+      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} activeBanner={activeQueuePill} />
     </div>
   );
 
@@ -2077,7 +2142,7 @@ export default function CustomerApp() {
           {reportSubmitting ? "Submitting..." : <><Send size={15} style={{ marginRight:6, verticalAlign:"middle" }} /> Submit Report</>}
         </Btn>
       </BottomSheet>
-      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />
+      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} activeBanner={activeQueuePill} />
     </div>
   );
 
@@ -2356,9 +2421,21 @@ export default function CustomerApp() {
   );
 
   // ── Booking ───────────────────────────────────────────────────────────────
-  if (screen==="booking" && selStore) return (
-    <div key="booking" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:110 }}>
-      <TopBar title="Book a Slot" sub={selStore.name} onBack={() => setScreen("detail")} />
+  if (screen==="booking" && selStore) {
+    const handleBookingBack = () => {
+      if (selSlot) {
+        setSelSlot(null);
+      } else if (needsStaff && selStaff) {
+        setSelStaff(null);
+      } else if (selDateIdx > 0) {
+        setSelDateIdx(0);
+      } else {
+        setScreen("detail");
+      }
+    };
+    return (
+      <div key="booking" className="screen-enter" style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Nunito',sans-serif", paddingBottom:110 }}>
+        <TopBar title="Book a Slot" sub={selStore.name} onBack={handleBookingBack} />
       <div style={{ padding:"16px" }}>
         <BookingStepper current={bookingStep} steps={bookingSteps} />
         <Card>
@@ -2573,6 +2650,7 @@ export default function CustomerApp() {
       </div>
     </div>
   );
+  }
 
   // ── Confirmed ─────────────────────────────────────────────────────────────
   // Redesigned as a single "digital ticket" card — the boarding-pass /
@@ -2689,15 +2767,14 @@ export default function CustomerApp() {
       {RescheduleSheet}
       <TopBar title="My Bookings" sub={bookingsLoading ? "Loading..." : `${myBookings.length} bookings`} onBack={() => setTab("home")} />
       <div className="store-grid" style={{ padding:16 }}>
-        {bookingsLoading ? <Loader skeleton /> : myBookings.length===0 ? (
-          <div style={{ textAlign:"center", padding:"60px 20px" }}>
-            <div style={{ width:72, height:72, borderRadius:24, background:C.pri+"15", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
-              <ClipboardList size={32} color={C.pri} />
-            </div>
-            <p style={{ fontSize:16, fontWeight:800, color:C.text }}>No bookings yet</p>
-            <p style={{ fontSize:13, color:C.muted, marginTop:8 }}>Book your first slot now</p>
-            <button onClick={() => {setTab("home");setScreen("stores");fetchStores();}} style={{ marginTop:20, padding:"12px 28px", background:`linear-gradient(135deg,${C.pri},#E0406A)`, color:"#fff", border:"none", borderRadius:14, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>Find a Store</button>
-          </div>
+        {bookingsLoading ? <BookingListSkeleton count={3} /> : myBookings.length===0 ? (
+          <EmptyState
+            icon={ClipboardList}
+            title="No bookings yet"
+            description="You don't have any upcoming or past bookings. Reserve your spot at a salon, clinic, or service center near you."
+            actionLabel="Find a Store"
+            onAction={() => { setTab("home"); setScreen("stores"); fetchStores(); }}
+          />
         ) : myBookings.map(b => (
           <Card key={b._id}>
             <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
@@ -2821,7 +2898,7 @@ export default function CustomerApp() {
           </Card>
         ))}
       </div>
-      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />
+      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} activeBanner={activeQueuePill} />
     </div>
   );
 
@@ -2906,7 +2983,7 @@ export default function CustomerApp() {
           <ChevronRight size={16} color={C.red} />
         </div>
       </div>
-      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} />
+      <BottomNav tabs={BOTTOM_TABS} active={tab} onChange={onNavChange} activeBanner={activeQueuePill} />
 
       {/* Referral screen — rendered inside the Profile tab's own return
           block so it survives switching between Home/Explore/Bookings/

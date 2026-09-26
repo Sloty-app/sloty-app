@@ -2,6 +2,10 @@ import { useState, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Home, Search, BookOpen, User, ArrowLeft, CheckCircle, AlertCircle, X, MapPin, LocateFixed, Star, LayoutDashboard, ListOrdered, MessageCircle, MoreHorizontal } from "lucide-react";
 import { C } from "../constants";
+import { StoreCardSkeleton, StoreListSkeleton, BookingCardSkeleton, BookingListSkeleton, StoreDetailSkeleton, OwnerDashboardSkeleton, ShimmerBox } from "./Skeletons";
+import { EmptyState } from "./EmptyState";
+
+export { StoreCardSkeleton, StoreListSkeleton, BookingCardSkeleton, BookingListSkeleton, StoreDetailSkeleton, OwnerDashboardSkeleton, ShimmerBox, EmptyState };
 
 const MAPS_KEY = import.meta.env.VITE_MAPS_KEY || "";
 
@@ -59,20 +63,7 @@ export function Select({ label, children, ...props }) {
 }
 
 export function Loader({ text="Loading...", skeleton=false }) {
-  if (skeleton) return (
-    <div style={{ padding:"0 0 16px" }}>
-      {[1,2,3].map(i => (
-        <div key={i} className="fade-in" style={{ background:C.card, borderRadius:"var(--radius-lg)", marginBottom:16, overflow:"hidden", boxShadow:"var(--shadow-sm)", animationDelay:`${i*0.06}s` }}>
-          <div style={{ height:120, background:"linear-gradient(90deg,#f0f2f8 25%,#e4e8f0 50%,#f0f2f8 75%)", backgroundSize:"200% 100%", animation:"shimmer 1.5s infinite" }} />
-          <div style={{ padding:14 }}>
-            <div style={{ height:14, width:"65%", background:"linear-gradient(90deg,#f0f2f8 25%,#e4e8f0 50%,#f0f2f8 75%)", backgroundSize:"200% 100%", animation:"shimmer 1.5s infinite", borderRadius:8, marginBottom:10 }} />
-            <div style={{ height:10, width:"40%", background:"linear-gradient(90deg,#f0f2f8 25%,#e4e8f0 50%,#f0f2f8 75%)", backgroundSize:"200% 100%", animation:"shimmer 1.5s infinite", borderRadius:8, marginBottom:14 }} />
-            <div style={{ height:44, background:"linear-gradient(90deg,#f0f2f8 25%,#e4e8f0 50%,#f0f2f8 75%)", backgroundSize:"200% 100%", animation:"shimmer 1.5s infinite", borderRadius:14 }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  if (skeleton) return <StoreListSkeleton count={3} />;
   return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"60px 20px" }}>
       <div style={{ width:40, height:40, border:`4px solid ${C.pri}22`, borderTop:`4px solid ${C.pri}`, borderRadius:"50%", animation:"spin 0.8s linear infinite" }} />
@@ -127,22 +118,29 @@ const NAV_ICONS = {
 // is keyed and fades in, so a nav living inside it was remounted and faded
 // back in from invisible on every tab switch (and a lingering transform on
 // the screen could stop position:fixed from sticking to the viewport).
-export function BottomNav({ tabs, active, onChange }) {
+export function BottomNav({ tabs, active, onChange, activeBanner }) {
   return createPortal(
-    <div className="bottom-nav" style={{ fontFamily:"'Nunito',sans-serif", position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:C.card, display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.07)", borderTopLeftRadius:"var(--radius-xl)", borderTopRightRadius:"var(--radius-xl)", zIndex:100 }}>
-      {tabs.map(([,,key]) => {
-        const { Icon, label } = NAV_ICONS[key] || { Icon:Home, label:key };
-        const isActive = active === key;
-        return (
-          <div key={key} onClick={() => onChange(key)} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3, cursor:"pointer" }}>
-            <div key={isActive ? "on" : "off"} className={isActive ? "nav-pop" : undefined} style={{ width:52, height:32, borderRadius:20, background:isActive?C.pri+"18":"transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"all 0.25s var(--ease-spring, ease)" }}>
-              <Icon size={20} color={isActive?C.pri:C.muted} strokeWidth={isActive?2.5:1.8} />
+    <>
+      {activeBanner && (
+        <div style={{ position:"fixed", bottom:74, left:"50%", transform:"translateX(-50%)", width:"calc(var(--app-width) - 24px)", zIndex:99 }}>
+          {activeBanner}
+        </div>
+      )}
+      <div className="bottom-nav" style={{ fontFamily:"'Nunito',sans-serif", position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"var(--app-width)", padding:"8px 0 24px", background:C.card, display:"flex", justifyContent:"space-around", boxShadow:"0 -4px 28px rgba(0,0,0,0.07)", borderTopLeftRadius:"var(--radius-xl)", borderTopRightRadius:"var(--radius-xl)", zIndex:100 }}>
+        {tabs.map(([,,key]) => {
+          const { Icon, label } = NAV_ICONS[key] || { Icon:Home, label:key };
+          const isActive = active === key;
+          return (
+            <div key={key} onClick={() => onChange(key)} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3, cursor:"pointer" }}>
+              <div key={isActive ? "on" : "off"} className={isActive ? "nav-pop" : undefined} style={{ width:52, height:32, borderRadius:20, background:isActive?C.pri+"18":"transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"all 0.25s var(--ease-spring, ease)" }}>
+                <Icon size={20} color={isActive?C.pri:C.muted} strokeWidth={isActive?2.5:1.8} />
+              </div>
+              <span style={{ fontSize:10, color:isActive?C.pri:C.muted, fontWeight:isActive?800:500, transition:"color 0.2s var(--ease, ease)" }}>{label}</span>
             </div>
-            <span style={{ fontSize:10, color:isActive?C.pri:C.muted, fontWeight:isActive?800:500, transition:"color 0.2s var(--ease, ease)" }}>{label}</span>
-          </div>
-        );
-      })}
-    </div>,
+          );
+        })}
+      </div>
+    </>,
     document.body
   );
 }
