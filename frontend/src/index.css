@@ -239,11 +239,10 @@ html, body {
   .chart-grid { grid-template-columns: repeat(2, 1fr) !important; }
   .chart-grid > :last-child { grid-column: 1 / -1; }
   .stat-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 16px !important; }
-  .cat-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 28px; }
-  .cat-groups > * { min-width: 0; }
-  .cat-row { scrollbar-width: thin !important; }
-  .cat-row::-webkit-scrollbar { display: block; height: 6px; }
-  .cat-row::-webkit-scrollbar-thumb { background: rgba(120, 90, 200, 0.35); border-radius: 3px; }
+     .cat-groups { display: flex; flex-wrap: wrap; gap: 4px 40px; align-items: flex-start; }
+     .cat-groups > * { flex: 0 0 auto; max-width: 100%; min-width: 0; }
+     .cat-row { flex-wrap: wrap !important; overflow: visible !important; padding-right: 16px; }
+     .cat-row > [aria-hidden="true"] { display: none; }
 }
 
 ::-webkit-scrollbar { display: none; }
