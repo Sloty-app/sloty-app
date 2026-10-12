@@ -117,6 +117,7 @@ exports.getAvailableSlots = async (req, res) => {
       const isBreak  = breakRanges.some(r => slotTotal < r.end && slotEnd > r.start);
       const breakLabel = breakRanges.find(r => slotTotal < r.end && slotEnd > r.start)?.label || "Break";
       const isBlocked = blockedSet.has(time);
+      const isFull = overlappingCount >= capacity;
 
       return {
         time,
