@@ -39,14 +39,14 @@ function isSlotExpired(dateStr, timeSlot) {
 
 exports.runNoShowCheck = async () => {
   try {
-    const today = getISTDateString();
-    const yesterday = getISTDateString(new Date(getISTNow() - 24 * 60 * 60 * 1000));
-
-    // Only look at today and yesterday — older ones would have been caught
-    // in a previous run; going further back wastes DB resources.
+    // Every still-confirmed booking dated today or earlier — not just
+    // today/yesterday. The old two-day window silently skipped bookings
+    // forever whenever the server was asleep or down when they expired
+    // (e.g. a free-tier host spinning down overnight), leaving them stuck
+    // as "confirmed". "YYYY-MM-DD" strings compare correctly as text.
     const candidates = await Booking.find({
       status: "confirmed",
-      date:   { $in: [today, yesterday] },
+      date:   { $lte: getISTDateString() },
     }).select("_id customer store date timeSlot status");
 
     let noShowCount = 0;
@@ -54,8 +54,11 @@ exports.runNoShowCheck = async () => {
     for (const booking of candidates) {
       if (!isSlotExpired(booking.date, booking.timeSlot)) continue;
 
-      // Mark booking as no-show
-      await Booking.findByIdAndUpdate(booking._id, { status: "no_show" });
+      // Conditional on still being "confirmed" — if the owner verified
+      // the customer's OTP in the meantime, this matches nothing and the
+      // customer isn't wrongly penalised.
+      const marked = await Booking.findOneAndUpdate({ _id: booking._id, status: "confirmed" }, { status: "no_show" });
+      if (!marked) continue;
 
       // Increment customer's no-show counter
       const customer = await User.findByIdAndUpdate(

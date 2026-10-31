@@ -27,6 +27,23 @@ const timeToMinutes = (t) => {
   return h * 60 + m;
 };
 
+// Named-staff mode: does [startMin, startMin+duration) overlap any of
+// this person's other active bookings that day? Compared by real time
+// ranges, not by identical start strings — a 10:30 booking clashes with
+// a 120-min one that started at 10:00 even though the strings differ.
+const staffHasClash = async (storeId, date, staffId, startMin, duration, excludeId, session) => {
+  const q = Booking.find({
+    store: storeId, date, staffId, status: { $in: ["confirmed", "in_progress"] },
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+  }).select("timeSlot service.duration");
+  if (session) q.session(session);
+  const others = await q;
+  return others.some(b => {
+    const s = timeToMinutes(b.timeSlot);
+    return startMin < s + (b.service?.duration || 30) && s < startMin + duration;
+  });
+};
+
 const generateSlots = (open, close, interval, serviceDuration) => {
   const slots = [];
   let [h, m] = open.split(":").map(Number);
@@ -250,9 +267,10 @@ exports.createBooking = async (req, res) => {
     // which correctly allows multiple concurrent bookings up to the
     // store's configured capacity rather than blocking after just one.
     if (resolvedStaffId) {
-      const slotTaken = await Booking.findOne({ store:storeId, date, timeSlot, staffId: resolvedStaffId, status:{ $in:["confirmed","in_progress"] } });
-      if (slotTaken) return res.status(400).json({ success:false, message:"This slot is already booked. Please choose another time." });
+      const slotTaken = await staffHasClash(storeId, date, resolvedStaffId, slotStartMinutes, totalDuration);
+      if (slotTaken) return res.status(400).json({ success:false, message:`${staffName} isn't free for the full ${totalDuration} mins from ${timeSlot}. Please choose another time.` });
     }
+    const reservedSlots = SlotCapacity.coveredSlots(timeSlot, totalDuration, store.slotDuration || 30);
 
     const todayCount  = await Booking.countDocuments({ store:storeId, date, staffId: resolvedStaffId, status:{ $in:["confirmed","in_progress","completed"] } });
     const tokenNumber = Booking.generateToken(todayCount);
@@ -293,18 +311,14 @@ exports.createBooking = async (req, res) => {
     try {
       session.startTransaction();
 
-      // Pooled-capacity mode: atomically reserve one "seat" in this
-      // slot. Succeeds only if fewer than the store's configured
-      // capacity are already booked here — if capacity is full, this
-      // throws a duplicate-key error (caught below and translated into
-      // a friendly "slot full" message), the same pattern already used
-      // for named-staff double-booking prevention.
+      // Pooled-capacity mode: atomically reserve one "seat" in every
+      // slot the combined services span, not just the starting one.
+      // Succeeds only if each has room under the store's configured
+      // capacity — if any is full, this throws a duplicate-key error
+      // (caught below and translated into a friendly "slot full"
+      // message) and the transaction rolls back the seats already taken.
       if (!resolvedStaffId) {
-        await SlotCapacity.findOneAndUpdate(
-          { store: storeId, date, timeSlot, bookedCount: { $lt: store.slotCapacity || 1 } },
-          { $inc: { bookedCount: 1 }, $setOnInsert: { store: storeId, date, timeSlot } },
-          { upsert: true, session }
-        );
+        await SlotCapacity.reserve(storeId, date, reservedSlots, store.slotCapacity, session);
       }
 
       [booking] = await Booking.create([{
@@ -317,6 +331,7 @@ exports.createBooking = async (req, res) => {
         staffName,
         date,
         timeSlot,
+        reservedSlots: resolvedStaffId ? undefined : reservedSlots,
         notes:         notes||"",
         paymentMode:   paymentMode||"cash",
         customerName:  req.user.name,
@@ -588,10 +603,7 @@ exports.updateStatus = async (req, res) => {
     // in_progress are the normal lifecycle of a legitimately-used slot
     // and correctly do NOT free it (the slot really was used).
     if (status === "no_show" && !booking.staffId) {
-      await SlotCapacity.updateOne(
-        { store: booking.store._id, date: booking.date, timeSlot: booking.timeSlot, bookedCount: { $gt: 0 } },
-        { $inc: { bookedCount: -1 } }
-      );
+      await SlotCapacity.releaseFor(booking);
     }
 
     // Real-time: push the change to the owner's queue view + the specific
@@ -906,10 +918,7 @@ exports.cancelBooking = async (req, res) => {
     // Named-staff bookings never created a SlotCapacity document, so
     // this simply matches nothing and safely no-ops for them.
     if (!booking.staffId) {
-      await SlotCapacity.updateOne(
-        { store: booking.store._id, date: booking.date, timeSlot: booking.timeSlot, bookedCount: { $gt: 0 } },
-        { $inc: { bookedCount: -1 } }
-      );
+      await SlotCapacity.releaseFor(booking);
     }
 
     emitToRoom(`store:${booking.store._id}:${booking.date}`, "queue:update", { reason:"cancelled", bookingId: booking._id });
@@ -1072,7 +1081,7 @@ exports.rescheduleBooking = async (req, res) => {
     const { date: newDate, timeSlot: newTimeSlot } = req.body;
     if (!newDate || !newTimeSlot) return res.status(400).json({ success:false, message:"New date and time slot are required" });
 
-    const booking = await Booking.findOne({ _id: req.params.id, customer: req.user.id }).populate("store", "name owner slotCapacity");
+    const booking = await Booking.findOne({ _id: req.params.id, customer: req.user.id }).populate("store", "name owner slotCapacity slotDuration");
     if (!booking) return res.status(404).json({ success:false, message:"Booking not found" });
     if (booking.status !== "confirmed") return res.status(400).json({ success:false, message:`Cannot reschedule a ${booking.status} booking` });
     if (booking.date === newDate && booking.timeSlot === newTimeSlot) {
@@ -1086,33 +1095,29 @@ exports.rescheduleBooking = async (req, res) => {
     try {
       session.startTransaction();
 
+      const duration = booking.service?.duration || store.slotDuration || 30;
+      let newReserved;
       if (booking.staffId) {
         // Named-staff: the person can only serve one customer at a
-        // time — check no one else already holds this new slot with them.
-        const conflict = await Booking.findOne({
-          store: store._id, date: newDate, timeSlot: newTimeSlot, staffId: booking.staffId,
-          status: { $in:["confirmed","in_progress"] }, _id: { $ne: booking._id },
-        }).session(session);
+        // time — check the whole new time range is free with them.
+        const conflict = await staffHasClash(store._id, newDate, booking.staffId, timeToMinutes(newTimeSlot), duration, booking._id, session);
         if (conflict) throw new Error("SLOT_TAKEN");
       } else {
-        // Pooled capacity: atomically reserve a seat in the NEW slot
-        // first (same upsert pattern as creation — fails cleanly via
-        // the unique index if the new slot is already full), then
-        // release the seat held in the OLD slot.
-        await SlotCapacity.findOneAndUpdate(
-          { store: store._id, date: newDate, timeSlot: newTimeSlot, bookedCount: { $lt: store.slotCapacity || 1 } },
-          { $inc: { bookedCount: 1 }, $setOnInsert: { store: store._id, date: newDate, timeSlot: newTimeSlot } },
-          { upsert: true, session }
-        );
-        await SlotCapacity.updateOne(
-          { store: store._id, date: oldDate, timeSlot: oldTimeSlot, bookedCount: { $gt: 0 } },
-          { $inc: { bookedCount: -1 } },
-          { session }
-        );
+        // Pooled capacity: release every seat held across the OLD span,
+        // then atomically reserve seats across the NEW span (same upsert
+        // pattern as creation — fails cleanly via the unique index if
+        // any slot is full). Releasing first matters when the spans
+        // overlap (10:00 -> 10:30 for 60 mins) so the booking doesn't
+        // collide with its own seat; the transaction undoes the release
+        // if the new span turns out to be unavailable.
+        newReserved = SlotCapacity.coveredSlots(newTimeSlot, duration, store.slotDuration || 30);
+        await SlotCapacity.releaseFor(booking, session);
+        await SlotCapacity.reserve(store._id, newDate, newReserved, store.slotCapacity, session);
       }
 
       booking.date = newDate;
       booking.timeSlot = newTimeSlot;
+      booking.reservedSlots = newReserved;
       await booking.save({ session });
 
       await session.commitTransaction();

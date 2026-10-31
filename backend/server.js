@@ -231,6 +231,10 @@ const PORT = process.env.PORT || 5001;
 // hard-to-explain error. Now the server genuinely waits for a
 // confirmed connection before opening the door to any request at all.
 const startServer = () => {
+  // Catch up immediately on boot rather than waiting for the first
+  // 30-min tick — after a cold start (or a host that keeps sleeping
+  // before 30 min of uptime) the interval alone may never fire.
+  runNoShowCheck().catch(err => console.error("No-show job error:", err.message));
   server.listen(PORT, () => {
     console.log("═══════════════════════════════════════");
     console.log("  📍 Sloty Backend Server");

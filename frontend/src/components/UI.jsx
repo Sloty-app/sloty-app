@@ -241,7 +241,24 @@ export function BottomSheet({ open, onClose, title, children }) {
   );
 }
 
-export function SlotPicker({ slots, selected, onSelect, loading, isWholeDayClosed, closureReason }) {
+// "9:30 AM" <-> minutes since midnight, for showing a booking's full span
+const slotToMinutes = (t) => {
+  const [time, period] = t.split(" ");
+  let [h, m] = time.split(":").map(Number);
+  if (period === "PM" && h !== 12) h += 12;
+  if (period === "AM" && h === 12) h = 0;
+  return h * 60 + m;
+};
+const minutesToSlot = (mins) => {
+  const h = Math.floor(mins / 60) % 24, m = mins % 60;
+  const dh = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return `${dh}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+};
+
+// `duration` (total minutes of every selected service) makes the picker
+// highlight every slot the booking will actually occupy, not just the
+// starting one — 2 services x 60 min starting 10:00 covers 10:00-12:00.
+export function SlotPicker({ slots, selected, onSelect, loading, isWholeDayClosed, closureReason, duration }) {
   if (loading) return <Loader text="Loading slots..." />;
   if (isWholeDayClosed) {
     return (
@@ -253,10 +270,16 @@ export function SlotPicker({ slots, selected, onSelect, loading, isWholeDayClose
   }
   if (!slots?.length) return <p style={{ color: C.muted, textAlign: "center", padding: "20px 0", fontSize: 13 }}>No slots available</p>;
 
+  const selStart = selected ? slotToMinutes(selected) : null;
+  const selEnd = selStart != null && duration ? selStart + duration : null;
+
   return (
+    <>
     <div className="slot-grid">
       {slots.map((slot) => {
         const isSelected = selected === slot.time;
+        const slotMin = slotToMinutes(slot.time);
+        const isCovered = !isSelected && selEnd != null && slotMin > selStart && slotMin < selEnd;
         const cls = !slot.available
           ? "slot-chip slot-chip--disabled"
           : isSelected
@@ -269,10 +292,13 @@ export function SlotPicker({ slots, selected, onSelect, loading, isWholeDayClose
           <div
             key={slot.time}
             className={cls}
-            style={!isSelected && !slot.available ? { background: bg, color } : undefined}
+            style={isCovered
+              ? { background: "color-mix(in srgb, var(--pri) 18%, transparent)", color: "var(--pri)", borderColor: "var(--pri)", opacity: 1 }
+              : !isSelected && !slot.available ? { background: bg, color } : undefined}
             onClick={() => slot.available && onSelect(slot.time)}
           >
             <span>{slot.time}</span>
+            {isCovered && <div style={{ fontSize: 8, fontWeight: 900 }}>INCLUDED</div>}
             {slot.isPast && <div style={{ fontSize: 8, fontWeight: 900 }}>PAST</div>}
             {slot.isBooked && <div style={{ fontSize: 8, fontWeight: 900 }}>TAKEN</div>}
             {slot.isBreak && <div style={{ fontSize: 8, fontWeight: 900 }}>{slot.breakLabel || "BREAK"}</div>}
@@ -289,6 +315,12 @@ export function SlotPicker({ slots, selected, onSelect, loading, isWholeDayClose
         );
       })}
     </div>
+    {selEnd != null && (
+      <p style={{ fontSize: 12, fontWeight: 800, color: C.text, marginTop: 12, textAlign: "center" }}>
+        {selected} – {minutesToSlot(selEnd)} · {duration} min
+      </p>
+    )}
+    </>
   );
 }
 

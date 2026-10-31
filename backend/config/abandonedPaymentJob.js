@@ -39,10 +39,7 @@ async function runAbandonedPaymentCleanup() {
     // creation time; named-staff bookings never created one, so this
     // safely no-ops for them, matching cancelBooking's own behavior.
     if (!booking.staffId) {
-      await SlotCapacity.updateOne(
-        { store: booking.store, date: booking.date, timeSlot: booking.timeSlot, bookedCount: { $gt: 0 } },
-        { $inc: { bookedCount: -1 } }
-      );
+      await SlotCapacity.releaseFor(booking);
     }
 
     emitToRoom(`store:${booking.store}:${booking.date}`, "queue:update", { reason:"cancelled", bookingId: booking._id });

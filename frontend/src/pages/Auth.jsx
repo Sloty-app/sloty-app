@@ -431,6 +431,19 @@ export default function Auth() {
 
   const usesOtpFlow = role === "customer" || role === "owner";
 
+  // Dev-only shortcut past the Firebase phone OTP — signs the seeded demo
+  // account straight in through the email/password endpoint, so customer
+  // and owner screens can be tested locally without a real phone or a
+  // FIREBASE_SERVICE_ACCOUNT_KEY. Never rendered in a production build.
+  const demoLogin = async (email) => {
+    setErr(""); setLoading(true);
+    try {
+      const res = await api("POST", "/auth/login", { email, password:"demo123" });
+      handleOtpSuccess(res);
+    } catch(e) { setErr(e.message || "Demo login failed — has the database been seeded?"); }
+    finally { setLoading(false); }
+  };
+
   return (
     <div className="auth-page" style={{ minHeight:"100vh", background:"#F0F2F8", fontFamily:"'Nunito',sans-serif", display:"flex", flexDirection:"column" }}>
       <div className="auth-card">
@@ -571,6 +584,29 @@ export default function Auth() {
             <p style={{ fontSize:10, color:"rgba(255,255,255,0.2)", marginTop:10, textAlign:"center" }}>Password: demo123 · Tap to autofill</p>
           </div>
         )}
+
+        {usesOtpFlow && import.meta.env.DEV && (() => {
+          const email = role === "owner" ? "owner@demo.com" : "customer@demo.com";
+          return (
+            <div style={{ background:C.sec, borderRadius:18, padding:"14px 16px", border:"1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:12 }}>
+                <Zap size={13} color={cfg.accent} />
+                <p style={{ fontSize:11, fontWeight:800, color:"rgba(255,255,255,0.4)", letterSpacing:1 }}>DEV LOGIN · SKIPS OTP</p>
+              </div>
+              <button onClick={() => demoLogin(email)} disabled={loading} style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", background:"none", border:"none", cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <div style={{ width:28, height:28, borderRadius:8, background:cfg.accent+"22", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <span style={{ fontSize:10, fontWeight:900, color:cfg.accent }}>{cfg.label[0]}</span>
+                  </div>
+                  <span style={{ fontSize:12, color:"rgba(255,255,255,0.6)", fontWeight:700 }}>{loading ? "Signing in..." : `Sign in as demo ${role}`}</span>
+                </div>
+                <span style={{ fontSize:11, color:cfg.accent, fontWeight:700 }}>{email}</span>
+              </button>
+              {err && <p style={{ fontSize:11, color:C.red, fontWeight:700, marginTop:8 }}>{err}</p>}
+              <p style={{ fontSize:10, color:"rgba(255,255,255,0.2)", marginTop:10, textAlign:"center" }}>Only shown under `vite dev` · Tap to sign in</p>
+            </div>
+          );
+        })()}
 
       </div>
       </div>

@@ -1530,6 +1530,7 @@ export default function CustomerApp() {
             slots={rescheduleSlots}
             selected={rescheduleSlot}
             onSelect={setRescheduleSlot}
+            duration={rescheduleModal?.service?.duration}
             loading={rescheduleSlotsLoading}
             isWholeDayClosed={rescheduleDayClosure.isWholeDayClosed}
             closureReason={rescheduleDayClosure.closureReason}
@@ -2545,6 +2546,7 @@ export default function CustomerApp() {
                 slots={slots}
                 selected={selSlot}
                 onSelect={setSelSlot}
+                duration={totalServiceDuration}
                 loading={slotsLoading}
                 isWholeDayClosed={dayClosure.isWholeDayClosed}
                 closureReason={dayClosure.closureReason}
