@@ -35,6 +35,7 @@ const BookingSchema = new mongoose.Schema({
   // drives slot availability; this one drives per-person performance.
   servedBy:     { type: mongoose.Schema.Types.ObjectId, default: null },
   servedByName: { type: String, default: "" },
+  startedAt:    { type: Date, default: null },
 
   date:     { type: String, required: true }, // "2026-05-01"
   timeSlot: { type: String, required: true }, // "10:30 AM"

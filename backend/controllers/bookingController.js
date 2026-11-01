@@ -905,11 +905,12 @@ exports.verifyOtp = async (req, res) => {
     const servedFields = server ? { servedBy: server._id, servedByName: server.name } : {};
     const claimed = await Booking.findOneAndUpdate(
       { _id: booking._id, status: "confirmed", otpVerified: { $ne: true } },
-      { status: "in_progress", otpVerified: true, ...servedFields }
+      { status: "in_progress", otpVerified: true, startedAt: new Date(), ...servedFields }
     );
     if (!claimed) return res.status(409).json({ success:false, message:"This booking was just updated. Please refresh." });
     booking.status      = "in_progress";
     booking.otpVerified = true;
+    booking.startedAt   = new Date();
     Object.assign(booking, servedFields);
 
     emitToRoom(`store:${booking.store._id}:${booking.date}`, "queue:update", { reason:"otp_verified", bookingId: booking._id });

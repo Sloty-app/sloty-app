@@ -11,6 +11,10 @@ const { escapeRegex } = require("../utils/regex");
 // internal/admin fields — the store's pending payout balance, approval
 // audit fields and the owner's personal phone (customers use the
 // store's own phone) were all readable by anyone.
+// The team list is internal unless customers pick a staff member when
+// booking; otherwise names stay with the owner.
+const hideTeam = (s) => (s && !s.hasStaff ? { ...s, staff: [] } : s);
+
 const PUBLIC_STORE_FIELDS = "-reviews -pendingUpiBalance -approvedBy -approvedAt -rejectedReason -removedBy -removedAt -ratingSum";
 
 // GET /api/stores — Public: Only APPROVED stores visible to customers
@@ -60,7 +64,7 @@ exports.getStores = async (req, res) => {
     stores = stores.map(s => {
       const n = waiting[String(s._id)] || 0;
       const per = (s.slotDuration || 30) / Math.max(1, s.slotCapacity || 1);
-      return { ...s, waitingNow:n, waitMinutes:Math.round(n * per) };
+      return { ...hideTeam(s), waitingNow:n, waitMinutes:Math.round(n * per) };
     });
 
     res.status(200).json({ success:true, count:stores.length, stores });
@@ -78,7 +82,7 @@ exports.getStore = async (req, res) => {
   try {
     const store = await Store.findOne({ _id:req.params.id, isApproved:true, isActive:true }).select(PUBLIC_STORE_FIELDS).populate("owner","name");
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
-    res.status(200).json({ success:true, store });
+    res.status(200).json({ success:true, store: hideTeam(store.toObject()) });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }

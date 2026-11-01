@@ -192,21 +192,60 @@ const LockableSection = ({ isEditing, children }) => (
 
 /* ── Row of team-member chips: picks who serves a customer (at OTP time,
    or to correct it afterwards). ── */
-function TeamPicker({ label, team, value, onPick }) {
+function TeamPicker({ label, team, value, onPick, busy = {}, forBookingId }) {
+  // Free people first, so the next arrival goes to whoever is available.
+  const isBusy = (m) => busy[m._id] && busy[m._id]._id !== forBookingId;
+  const ordered = [...team].sort((a, b) => (isBusy(a) ? 1 : 0) - (isBusy(b) ? 1 : 0));
+  const pick = (m) => {
+    const job = isBusy(m) && busy[m._id];
+    if (job && !window.confirm(`${m.name} is still with token ${job.tokenNumber}${job.freeAt ? ` (free about ${job.freeAt})` : ""}. Assign anyway?`)) return;
+    onPick(m._id);
+  };
   return (
     <div style={{ marginBottom:10 }}>
       <p style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:6 }}>{label}</p>
       <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-        {team.map(m => {
+        {ordered.map(m => {
           const selected = String(value) === String(m._id);
+          const job = isBusy(m) && busy[m._id];
           return (
-            <button key={m._id} onClick={() => onPick(m._id)} style={{ padding:"7px 12px", borderRadius:20, border:`1.5px solid ${selected ? C.pri : "#E8ECF5"}`, background:selected ? C.pri : C.card, color:selected ? "#fff" : C.text, fontWeight:800, fontSize:12, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
-              {m.name}{m.specialization ? <span style={{ fontWeight:600, opacity:0.75 }}> · {m.specialization}</span> : null}
+            <button key={m._id} onClick={() => pick(m)} style={{ padding:"7px 12px", borderRadius:20, border:`1.5px solid ${selected ? C.pri : "#E8ECF5"}`, background:selected ? C.pri : C.card, color:selected ? "#fff" : C.text, fontWeight:800, fontSize:12, cursor:"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", gap:6, opacity:job && !selected ? 0.7 : 1 }}>
+              <span style={{ width:8, height:8, borderRadius:"50%", background:job ? C.acc : C.green, flexShrink:0 }} />
+              {m.name}
+              <span style={{ fontWeight:600, opacity:0.75 }}>{job ? `· busy with ${job.tokenNumber}` : "· free"}</span>
             </button>
           );
         })}
       </div>
     </div>
+  );
+}
+
+/* ── "Team right now": who is free and who is with a customer, with
+   a rough time each busy person will be free. ── */
+function TeamStatus({ team, busy }) {
+  const free = team.filter(m => !busy[m._id]).length;
+  return (
+    <Card>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+        <p style={{ fontSize:13, fontWeight:900, color:C.text, display:"flex", alignItems:"center", gap:6 }}><Users size={15} color={C.pri} /> Team right now</p>
+        <span style={{ fontSize:11, fontWeight:800, color:free ? C.green : C.acc }}>{free} of {team.length} free</span>
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+        {[...team].sort((a, b) => (busy[a._id] ? 1 : 0) - (busy[b._id] ? 1 : 0)).map(m => {
+          const job = busy[m._id];
+          return (
+            <div key={m._id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderRadius:10, background:job ? C.acc+"12" : C.green+"12" }}>
+              <span style={{ width:9, height:9, borderRadius:"50%", background:job ? C.acc : C.green, flexShrink:0 }} />
+              <span style={{ fontSize:13, fontWeight:800, color:C.text }}>{m.name}</span>
+              <span style={{ fontSize:11, color:C.muted, marginLeft:"auto", textAlign:"right" }}>
+                {job ? <>With {job.tokenNumber} · {job.service?.name}{job.freeAt ? <> · free ~{job.freeAt}</> : null}</> : <b style={{ color:C.green }}>Free</b>}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 
@@ -246,7 +285,7 @@ function StaffManager({ hasStaff, onToggleHasStaff, staff, onChange, slotCapacit
       <p style={{ fontSize:11, color:C.muted, marginBottom:14 }}>
         {hasStaff
           ? "Customers will pick a specific staff member before booking. Each staff member gets their own queue and token sequence."
-          : "Off: customers just book a time, and you assign a team member when they arrive. Turn on if customers should pick a specific doctor, barber or mechanic."}
+          : "Off: customers just book a time and never see team names. When they arrive, the queue shows who is free and you assign them. Turn on if customers should pick a specific doctor, barber or mechanic."}
       </p>
 
       <LockableSection isEditing={isEditing}>
@@ -1062,6 +1101,14 @@ export default function OwnerApp() {
   const completed     = todayBookings.filter(b=>b.status==="completed").length;
   const noShowToday   = todayBookings.filter(b=>b.status==="no_show").length;
   const queueBookings = staffFilter==="all" ? todayBookings : todayBookings.filter(b => b.staffId === staffFilter);
+  // Team member id -> the visit they are on right now (with an estimated
+  // finish time from when the OTP was verified plus service + add-on time).
+  const busyByMember = {};
+  todayBookings.filter(b => b.status === "in_progress" && b.servedBy).forEach(b => {
+    const mins = (b.service?.duration || 0) + (b.addedServices || []).reduce((a, x) => a + (x.duration || 0), 0);
+    const freeAt = b.startedAt && mins ? new Date(new Date(b.startedAt).getTime() + mins * 60000).toLocaleTimeString("en-IN", { hour:"numeric", minute:"2-digit", timeZone:"Asia/Kolkata" }) : "";
+    busyByMember[b.servedBy] = { ...b, freeAt };
+  });
 
   // Primary four live in the fixed bottom nav (same component/pattern
   // as CustomerApp) — always visible, no scrolling. Everything else is
@@ -1437,6 +1484,7 @@ export default function OwnerApp() {
                 </div>
               ))}
             </div>
+            {activeTeam.length > 0 && <TeamStatus team={activeTeam} busy={busyByMember} />}
             {queueBookings.length===0 ? (
               <EmptyState
                 icon={CheckCircle}
@@ -1501,6 +1549,7 @@ export default function OwnerApp() {
                         label="Who's serving this customer?"
                         team={activeTeam}
                         value={servingPick[b._id] || b.staffId || ""}
+                        busy={busyByMember}
                         onPick={id => setServingPick(p => ({ ...p, [b._id]: id }))}
                       />
                     )}
@@ -1521,7 +1570,7 @@ export default function OwnerApp() {
                         setOtpErr(e=>({...e,[b._id]:""}));
                         try {
                           const res = await api("PUT", `/bookings/${b._id}/verify-otp`, { otp: otpVal, servedByStaffId });
-                          setBookings(bk => bk.map(x => x._id===b._id ? {...x, status:"in_progress", otpVerified:true, servedBy:res.booking?.servedBy, servedByName:res.booking?.servedByName} : x));
+                          setBookings(bk => bk.map(x => x._id===b._id ? {...x, status:"in_progress", otpVerified:true, startedAt:res.booking?.startedAt, servedBy:res.booking?.servedBy, servedByName:res.booking?.servedByName} : x));
                         } catch(e) { setOtpErr(er=>({...er,[b._id]:e.message})); }
                       }} style={{ padding:"11px 16px", background:`linear-gradient(135deg,${C.green},#00A887)`, color:"#fff", border:"none", borderRadius:10, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif", fontSize:13, display:"flex", alignItems:"center", gap:6 }}>
                         <ShieldCheck size={15} /> Verify
@@ -1547,6 +1596,8 @@ export default function OwnerApp() {
                         label="Change who's serving"
                         team={activeTeam}
                         value={b.servedBy || ""}
+                        busy={busyByMember}
+                        forBookingId={b._id}
                         onPick={id => assignServer(b._id, id)}
                       />
                     ) : (
