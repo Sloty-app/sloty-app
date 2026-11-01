@@ -24,7 +24,7 @@ import {
   Plus, Trash2, ShieldCheck, XCircle, PlayCircle,
   CalendarDays, Timer, ChevronRight, Save, Coffee, History, Edit2, Wallet, BarChart3,
   Image as ImageIcon, X, UserPlus, Bell,
-  FileText, Send, MessageCircle, Mail, Ban, Search, ArrowLeft
+  FileText, Send, MessageCircle, Mail, Ban, Search, ArrowLeft, UserCheck
 } from "lucide-react";
 
 /* ── Upload an image file directly to Cloudinary (unsigned upload preset).
@@ -190,9 +190,32 @@ const LockableSection = ({ isEditing, children }) => (
   </div>
 );
 
-/* ── Staff / doctor management — multi-staff stores get an independent
-   queue and token sequence per staff member. Off by default so
-   single-chair salons and one-mechanic garages are unaffected. ── */
+/* ── Row of team-member chips: picks who serves a customer (at OTP time,
+   or to correct it afterwards). ── */
+function TeamPicker({ label, team, value, onPick }) {
+  return (
+    <div style={{ marginBottom:10 }}>
+      <p style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:6 }}>{label}</p>
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+        {team.map(m => {
+          const selected = String(value) === String(m._id);
+          return (
+            <button key={m._id} onClick={() => onPick(m._id)} style={{ padding:"7px 12px", borderRadius:20, border:`1.5px solid ${selected ? C.pri : "#E8ECF5"}`, background:selected ? C.pri : C.card, color:selected ? "#fff" : C.text, fontWeight:800, fontSize:12, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
+              {m.name}{m.specialization ? <span style={{ fontWeight:600, opacity:0.75 }}> · {m.specialization}</span> : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Team / staff management. Every store can list the people who work
+   there: the owner picks who serves each customer at OTP time, and
+   Analytics shows each person's work. The switch additionally lets
+   CUSTOMERS pick a person when booking (independent queue and token
+   sequence per staff member) — off by default so single-chair salons
+   and one-mechanic garages are unaffected. ── */
 function StaffManager({ hasStaff, onToggleHasStaff, staff, onChange, slotCapacity, onCapacityChange, saveStatus, onSave, isEditing, onToggleEdit }) {
   const addStaff = () => onChange([...staff, { name:"", specialization:"", isActive:true }]);
   const updateStaff = (i, field, val) => onChange(staff.map((s,j) => j===i ? { ...s, [field]: val } : s));
@@ -202,9 +225,15 @@ function StaffManager({ hasStaff, onToggleHasStaff, staff, onChange, slotCapacit
   return (
     <Card>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-        <SectionHeader icon={Users} title="Staff / Doctors" />
+        <SectionHeader icon={Users} title="Team / Staff" />
+        <SectionEditToggle isEditing={isEditing} onToggle={onToggleEdit} />
+      </div>
+      <p style={{ fontSize:11, color:C.muted, marginBottom:14 }}>
+        Add everyone who works here. When a customer arrives you'll pick who serves them, and Analytics will show each person's work, services and revenue.
+      </p>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:6 }}>
+        <span style={{ fontSize:12, fontWeight:800, color:C.text }}>Customers choose a staff member</span>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <SectionEditToggle isEditing={isEditing} onToggle={onToggleEdit} />
           <button
             onClick={() => isEditing && onToggleHasStaff(!hasStaff)}
             disabled={!isEditing}
@@ -217,7 +246,7 @@ function StaffManager({ hasStaff, onToggleHasStaff, staff, onChange, slotCapacit
       <p style={{ fontSize:11, color:C.muted, marginBottom:14 }}>
         {hasStaff
           ? "Customers will pick a specific staff member before booking. Each staff member gets their own queue and token sequence."
-          : "Turn this on if multiple doctors, barbers, or mechanics work here and customers should pick a specific person."}
+          : "Off: customers just book a time, and you assign a team member when they arrive. Turn on if customers should pick a specific doctor, barber or mechanic."}
       </p>
 
       <LockableSection isEditing={isEditing}>
@@ -237,12 +266,12 @@ function StaffManager({ hasStaff, onToggleHasStaff, staff, onChange, slotCapacit
         </div>
       )}
 
-      {hasStaff && (
         <>
+          <p style={{ fontSize:11, fontWeight:800, color:C.muted, letterSpacing:1, margin:"14px 0 8px" }}>YOUR TEAM</p>
           {staff.map((s, i) => (
             <div key={i} style={{ background: s.isActive?C.inputBg:C.bg, borderRadius:14, padding:12, marginBottom:10, border:`2px solid ${s.isActive?"#E8ECF5":"#E0E0E0"}`, opacity: s.isActive?1:0.6 }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-                <span style={{ fontSize:11, fontWeight:800, color:C.muted }}>STAFF {i+1}</span>
+                <span style={{ fontSize:11, fontWeight:800, color:C.muted }}>TEAM MEMBER {i+1}</span>
                 <div style={{ display:"flex", gap:8 }}>
                   <button onClick={() => toggleActive(i)} style={{ background:s.isActive?C.green+"15":C.muted+"15", color:s.isActive?C.green:C.muted, border:"none", borderRadius:8, padding:"4px 10px", cursor:"pointer", fontWeight:800, fontSize:11, fontFamily:"'Nunito',sans-serif" }}>
                     {s.isActive?"Active":"Hidden"}
@@ -255,22 +284,21 @@ function StaffManager({ hasStaff, onToggleHasStaff, staff, onChange, slotCapacit
               <input
                 value={s.name}
                 onChange={e=>updateStaff(i, "name", e.target.value)}
-                placeholder="e.g. Dr. Priya Sharma"
+                placeholder="Name, e.g. Ravi or Dr. Priya Sharma"
                 style={{ width:"100%", padding:"11px 14px", border:"2px solid #E8ECF5", borderRadius:10, fontSize:13, fontFamily:"'Nunito',sans-serif", marginBottom:8, boxSizing:"border-box", background:C.inputBg }}
               />
               <input
                 value={s.specialization}
                 onChange={e=>updateStaff(i, "specialization", e.target.value)}
-                placeholder="e.g. Cardiologist, Senior Barber"
+                placeholder="Role (optional), e.g. Senior Barber, Mechanic"
                 style={{ width:"100%", padding:"11px 14px", border:"2px solid #E8ECF5", borderRadius:10, fontSize:13, fontFamily:"'Nunito',sans-serif", boxSizing:"border-box", background:C.inputBg }}
               />
             </div>
           ))}
           <button onClick={addStaff} style={{ padding:"12px 20px", background:C.pri+"15", color:C.pri, border:`2px dashed ${C.pri}44`, borderRadius:12, cursor:"pointer", fontWeight:800, fontFamily:"'Nunito',sans-serif", fontSize:13, width:"100%", marginTop:4, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-            <UserPlus size={14} /> Add Staff Member
+            <UserPlus size={14} /> Add Team Member
           </button>
         </>
-      )}
       </LockableSection>
       <SectionSaveButton status={saveStatus} onSave={onSave} disabled={!isEditing} />
     </Card>
@@ -621,7 +649,8 @@ function OwnerSettings({ myStore, onUpdate, user }) {
         isEditing={editing.staff}
         onToggleEdit={() => toggleEdit("staff")}
         onSave={() => saveSection("staff", { hasStaff, staff, slotCapacity }, () => {
-          if (hasStaff && staff.some(s=>!s.name)) return "Please name every staff member, or remove the empty one";
+          if (staff.some(s=>!s.name?.trim())) return "Please name every team member, or remove the empty one";
+          if (hasStaff && !staff.some(s=>s.isActive)) return "Add at least one active team member for customers to choose from";
         })}
       />
       </>
@@ -741,6 +770,9 @@ export default function OwnerApp() {
   // unmounts OwnerMessages on every tab switch.
   const [activeConversationId, setActiveConversationId] = useState(null);
   const [otpErr,      setOtpErr]      = useState({});
+  // Team member picked to serve each waiting booking (bookingId -> staff _id)
+  const [servingPick, setServingPick] = useState({});
+  const [reassigning, setReassigning] = useState(null); // bookingId whose "served by" is being changed
   const [staffFilter, setStaffFilter] = useState("all"); // "all" or a staff _id
   const [bookingSearch, setBookingSearch] = useState("");
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -1002,6 +1034,15 @@ export default function OwnerApp() {
       const res = await api("PUT", `/stores/${myStore._id}/toggle-open`);
       setMyStore(s=>({...s,isOpen:res.isOpen}));
     } catch(e) { setErr(e.message); }
+  };
+
+  const activeTeam = (myStore?.staff || []).filter(s => s.isActive);
+  const assignServer = async (bookingId, staffId) => {
+    try {
+      const res = await api("PUT", `/bookings/${bookingId}/assign`, { staffId });
+      setBookings(bk => bk.map(x => x._id===bookingId ? { ...x, servedBy: res.booking.servedBy, servedByName: res.booking.servedByName } : x));
+      setReassigning(null);
+    } catch(e) { setOtpErr(er => ({ ...er, [bookingId]: e.message })); }
   };
 
   const updateStatus = async (id, status) => {
@@ -1438,6 +1479,12 @@ export default function OwnerApp() {
                       <span style={{ fontSize:11, color:C.pri, fontWeight:700 }}>{b.staffName}</span>
                     </div>
                   )}
+                  {b.status === "completed" && b.servedByName && (
+                    <div style={{ display:"flex", alignItems:"center", gap:4, background:C.green+"12", padding:"2px 8px", borderRadius:10 }}>
+                      <UserCheck size={11} color={C.green} />
+                      <span style={{ fontSize:11, color:C.green, fontWeight:700 }}>Served by {b.servedByName}</span>
+                    </div>
+                  )}
                   {b.paymentMode === "upi" && b.paymentStatus === "paid" && (
                     <div style={{ display:"flex", alignItems:"center", gap:4, background:C.green+"12", padding:"2px 8px", borderRadius:10 }}>
                       <CheckCircle size={11} color={C.green} />
@@ -1449,6 +1496,14 @@ export default function OwnerApp() {
 
                 {b.status==="confirmed" && (
                   <div style={{ marginTop:12 }}>
+                    {activeTeam.length > 0 && (
+                      <TeamPicker
+                        label="Who's serving this customer?"
+                        team={activeTeam}
+                        value={servingPick[b._id] || b.staffId || ""}
+                        onPick={id => setServingPick(p => ({ ...p, [b._id]: id }))}
+                      />
+                    )}
                     <div style={{ display:"flex", gap:8, marginBottom:8 }}>
                       <input
                         placeholder="– – – –"
@@ -1461,10 +1516,12 @@ export default function OwnerApp() {
                       <button onClick={async () => {
                         const otpVal = document.getElementById(`otp-${b._id}`).value;
                         if (!otpVal || otpVal.length !== 4) { setOtpErr(e=>({...e,[b._id]:"Enter a valid 4-digit OTP"})); return; }
+                        const servedByStaffId = servingPick[b._id] || b.staffId || undefined;
+                        if (activeTeam.length > 0 && !servedByStaffId) { setOtpErr(e=>({...e,[b._id]:"Choose who is serving this customer"})); return; }
                         setOtpErr(e=>({...e,[b._id]:""}));
                         try {
-                          await api("PUT", `/bookings/${b._id}/verify-otp`, { otp: otpVal });
-                          setBookings(bk => bk.map(x => x._id===b._id ? {...x, status:"in_progress", otpVerified:true} : x));
+                          const res = await api("PUT", `/bookings/${b._id}/verify-otp`, { otp: otpVal, servedByStaffId });
+                          setBookings(bk => bk.map(x => x._id===b._id ? {...x, status:"in_progress", otpVerified:true, servedBy:res.booking?.servedBy, servedByName:res.booking?.servedByName} : x));
                         } catch(e) { setOtpErr(er=>({...er,[b._id]:e.message})); }
                       }} style={{ padding:"11px 16px", background:`linear-gradient(135deg,${C.green},#00A887)`, color:"#fff", border:"none", borderRadius:10, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif", fontSize:13, display:"flex", alignItems:"center", gap:6 }}>
                         <ShieldCheck size={15} /> Verify
@@ -1485,6 +1542,26 @@ export default function OwnerApp() {
                       <ShieldCheck size={14} color={C.green} />
                       <span style={{ fontSize:12, color:C.green, fontWeight:700 }}>OTP Verified — Service in progress</span>
                     </div>
+                    {activeTeam.length > 0 && (reassigning === b._id ? (
+                      <TeamPicker
+                        label="Change who's serving"
+                        team={activeTeam}
+                        value={b.servedBy || ""}
+                        onPick={id => assignServer(b._id, id)}
+                      />
+                    ) : (
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", background:C.pri+"10", borderRadius:10, padding:"8px 12px", marginBottom:8 }}>
+                        <span style={{ fontSize:12, color:C.text, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
+                          <UserCheck size={14} color={C.pri} /> {b.servedByName ? `Served by ${b.servedByName}` : "No team member assigned"}
+                        </span>
+                        <button onClick={() => setReassigning(b._id)} style={{ background:"none", border:"none", color:C.pri, fontWeight:800, fontSize:12, cursor:"pointer", fontFamily:"'Nunito',sans-serif" }}>
+                          {b.servedByName ? "Change" : "Assign"}
+                        </button>
+                      </div>
+                    ))}
+                    {otpErr[b._id] && (
+                      <p style={{ color: C.red, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>⚠️ {otpErr[b._id]}</p>
+                    )}
                     <button onClick={()=>updateStatus(b._id,"completed")} style={{ width:"100%", padding:"11px", background:`linear-gradient(135deg,${C.green},#00A887)`, color:"#fff", border:"none", borderRadius:11, fontWeight:800, cursor:"pointer", fontFamily:"'Nunito',sans-serif", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                       <CheckCircle size={15} /> Mark Complete
                     </button>

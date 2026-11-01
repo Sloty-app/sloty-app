@@ -29,6 +29,12 @@ const BookingSchema = new mongoose.Schema({
   // enabled and the customer picked a specific staff member.
   staffId:   { type: mongoose.Schema.Types.ObjectId, default: null },
   staffName: { type: String, default: "" },
+  // Who on the store's team actually served this customer — chosen by
+  // the owner when verifying the OTP (defaults to the staff member the
+  // customer picked, if any). Separate from staffId above, which only
+  // drives slot availability; this one drives per-person performance.
+  servedBy:     { type: mongoose.Schema.Types.ObjectId, default: null },
+  servedByName: { type: String, default: "" },
 
   date:     { type: String, required: true }, // "2026-05-01"
   timeSlot: { type: String, required: true }, // "10:30 AM"

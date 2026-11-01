@@ -120,10 +120,36 @@ exports.getDashboardAnalytics = async (req, res) => {
             } },
             { $group: { _id: "$_hour24", count: { $sum: 1 } } },
           ],
+          // Per team member: who the owner assigned at OTP time
+          // (servedBy), falling back to the staff member the customer
+          // booked with. Visits nobody was assigned to group under null.
+          // Service names include add-ons, so a beard trim added during
+          // a haircut counts as work that person did too.
           staffPerformance: [
-            { $match: { status: "completed", staffName: { $nin: [null, ""] } } },
-            { $group: { _id: "$staffName", bookings: { $sum: 1 }, revenue: { $sum: bookingRevenueExpr } } },
-            { $sort: { revenue: -1 } },
+            { $match: { status: "completed" } },
+            { $addFields: {
+                _personId: { $ifNull: ["$servedBy", "$staffId"] },
+                _personName: { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ["$servedByName", ""] } }, 0] }, "$servedByName", { $ifNull: ["$staffName", ""] }] },
+                _services: { $concatArrays: [
+                  { $cond: [
+                      { $gt: [{ $size: { $ifNull: ["$serviceBreakdown", []] } }, 0] },
+                      { $map: { input: "$serviceBreakdown", as: "s", in: "$$s.name" } },
+                      [{ $ifNull: ["$service.name", "Unknown"] }],
+                  ] },
+                  { $map: { input: { $ifNull: ["$addedServices", []] }, as: "x", in: "$$x.name" } },
+                ] },
+            } },
+            { $group: {
+                _id: "$_personId",
+                name: { $last: "$_personName" },
+                bookings: { $sum: 1 },
+                revenue: { $sum: bookingRevenueExpr },
+                minutes: { $sum: { $add: [
+                  { $ifNull: ["$service.duration", 0] },
+                  { $sum: { $map: { input: { $ifNull: ["$addedServices", []] }, as: "x", in: { $ifNull: ["$$x.duration", 0] } } } },
+                ] } },
+                services: { $push: "$_services" },
+            } },
           ],
       } },
     ]);
@@ -164,7 +190,32 @@ exports.getDashboardAnalytics = async (req, res) => {
       .map(r => ({ hour: r._id, count: r.count }))
       .filter(h => h.count > 0)
       .sort((a, b) => a.hour - b.hour);
-    const staffPerformance = agg.staffPerformance.map(r => ({ name: r._id, bookings: r.bookings, revenue: r.revenue }));
+    // Every active team member gets a row (zero if they served nobody in
+    // this period, which is useful to see too), plus anyone no longer on
+    // the team who still has work in the window. Names come from the
+    // current team list so a renamed member keeps their history.
+    const team = (store.staff || []).filter(s => s.isActive);
+    const rowsById = new Map(agg.staffPerformance.filter(r => r._id).map(r => [String(r._id), r]));
+    const topServices = (lists) => {
+      const counts = {};
+      lists.flat().forEach(n => { if (n) counts[n] = (counts[n] || 0) + 1; });
+      return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
+    };
+    const toRow = (id, name, r) => ({
+      id, name,
+      bookings: r?.bookings || 0,
+      revenue: r?.revenue || 0,
+      minutes: r?.minutes || 0,
+      topServices: topServices(r?.services || []),
+    });
+    const staffPerformance = [
+      ...team.map(m => toRow(String(m._id), m.name, rowsById.get(String(m._id)))),
+      ...[...rowsById.entries()]
+        .filter(([id]) => !team.some(m => String(m._id) === id))
+        .map(([id, r]) => ({ ...toRow(id, r.name || "Former team member", r), former: true })),
+    ].sort((a, b) => b.revenue - a.revenue || b.bookings - a.bookings);
+    const unassignedRow = agg.staffPerformance.find(r => !r._id);
+    const unassigned = { bookings: unassignedRow?.bookings || 0, revenue: unassignedRow?.revenue || 0 };
 
     // New vs returning: "new" means this is the customer's first-ever
     // booking at this store (not just first in the selected window) —
@@ -194,7 +245,9 @@ exports.getDashboardAnalytics = async (req, res) => {
       noShowTrend,
       peakHours,
       staffPerformance,
+      unassigned,
       hasStaff: store.hasStaff,
+      hasTeam: team.length > 0,
     });
   } catch (err) {
     console.error("getDashboardAnalytics error:", err.message);

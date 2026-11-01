@@ -848,11 +848,40 @@ exports.markAddOnPaid = async (req, res) => {
   }
 };
 
+// The store's team: everyone the owner listed under Staff, whether or
+// not customers pick staff when booking (store.hasStaff).
+const activeTeam = (store) => (store?.staff || []).filter(s => s.isActive);
+const findActiveTeamMember = (store, id) => activeTeam(store).find(s => String(s._id) === String(id)) || null;
+
+// PUT /api/bookings/:id/assign  { staffId } — owner changes who is
+// serving / served a visit (e.g. picked the wrong person at OTP time).
+exports.assignServer = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id).populate("store", "owner staff");
+    if (!booking) return res.status(404).json({ success:false, message:"Booking not found" });
+    if (booking.store?.owner?.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ success:false, message:"Not authorized" });
+    }
+    if (!["in_progress", "completed"].includes(booking.status)) {
+      return res.status(400).json({ success:false, message:"You can assign a team member once the customer's OTP is verified." });
+    }
+    const member = findActiveTeamMember(booking.store, req.body.staffId);
+    if (!member) return res.status(400).json({ success:false, message:"Please pick an active team member." });
+    booking.servedBy = member._id;
+    booking.servedByName = member.name;
+    await booking.save({ validateBeforeSave:false });
+    emitToRoom(`store:${booking.store._id}:${booking.date}`, "queue:update", { reason:"assigned", bookingId: booking._id });
+    res.status(200).json({ success:true, message:`Assigned to ${member.name}`, booking });
+  } catch (err) {
+    res.status(500).json({ success:false, message:"Server error" });
+  }
+};
+
 // PUT /api/bookings/:id/verify-otp — Owner verifies customer OTP to start service
 exports.verifyOtp = async (req, res) => {
   try {
-    const { otp } = req.body;
-    const booking = await Booking.findById(req.params.id).populate("store", "owner name");
+    const { otp, servedByStaffId } = req.body;
+    const booking = await Booking.findById(req.params.id).populate("store", "owner name staff");
     if (!booking)           return res.status(404).json({ success:false, message:"Booking not found" });
     if (booking.store?.owner?.toString() !== req.user.id && req.user.role !== "admin") {
       return res.status(403).json({ success: false, message: "Not authorized" });
@@ -861,14 +890,27 @@ exports.verifyOtp = async (req, res) => {
     // A cancelled/no-show booking has already given its seat back —
     // starting it would put an unreserved customer in a slot.
     if (booking.status !== "confirmed") return res.status(400).json({ success:false, message:`This booking is ${booking.status.replace("_", " ")} and can't be started.` });
+
+    // Who's serving: the owner's pick, else the staff member the customer
+    // booked with. A store with a team must name someone, so every visit
+    // is counted towards a person's performance.
+    const servingId = servedByStaffId || (booking.staffId ? String(booking.staffId) : null);
+    const server = servingId ? findActiveTeamMember(booking.store, servingId) : null;
+    if (servingId && !server) return res.status(400).json({ success:false, message:"That team member isn't active any more. Please pick someone else." });
+    if (!server && activeTeam(booking.store).length > 0) {
+      return res.status(400).json({ success:false, message:"Choose who is serving this customer." });
+    }
+
     if (booking.otp !== otp) return res.status(400).json({ success:false, message:"Invalid OTP. Ask customer to check their app." });
+    const servedFields = server ? { servedBy: server._id, servedByName: server.name } : {};
     const claimed = await Booking.findOneAndUpdate(
       { _id: booking._id, status: "confirmed", otpVerified: { $ne: true } },
-      { status: "in_progress", otpVerified: true }
+      { status: "in_progress", otpVerified: true, ...servedFields }
     );
     if (!claimed) return res.status(409).json({ success:false, message:"This booking was just updated. Please refresh." });
     booking.status      = "in_progress";
     booking.otpVerified = true;
+    Object.assign(booking, servedFields);
 
     emitToRoom(`store:${booking.store._id}:${booking.date}`, "queue:update", { reason:"otp_verified", bookingId: booking._id });
     emitToRoom(`user:${booking.customer}`, "booking:status", { bookingId: booking._id, status:"in_progress", storeName: booking.store?.name });

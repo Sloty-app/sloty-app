@@ -183,23 +183,53 @@ export default function OwnerAnalytics() {
         )}
       </Card>
 
-      {/* Staff performance — only for multi-staff stores */}
-      {data.hasStaff && (
+      {/* Team performance — everyone on the store's team, from the
+          team member assigned to each completed visit */}
+      {(data.hasTeam || data.staffPerformance.length > 0) ? (
         <Card>
-          <SectionHeader icon={Users} title="Staff Performance" />
-          {data.staffPerformance.length === 0 ? (
-            <p style={{ fontSize:12, color:C.muted, textAlign:"center", padding:"16px 0" }}>No completed bookings with staff assigned yet.</p>
-          ) : (
-            data.staffPerformance.map(s => (
-              <div key={s.name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderTop:"1px solid #F0F2F8" }}>
-                <div>
-                  <p style={{ fontSize:13, fontWeight:800, color:C.text }}>{s.name}</p>
-                  <p style={{ fontSize:11, color:C.muted }}>{s.bookings} bookings</p>
+          <SectionHeader icon={Users} title="Team Performance" />
+          {(() => {
+            const topRevenue = Math.max(1, ...data.staffPerformance.map(s => s.revenue));
+            return data.staffPerformance.map(s => (
+              <div key={s.id} style={{ padding:"12px 0", borderTop:"1px solid #F0F2F8" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:10 }}>
+                  <p style={{ fontSize:13, fontWeight:900, color:C.text }}>
+                    {s.name}{s.former && <span style={{ fontSize:10, fontWeight:700, color:C.muted }}> · no longer on team</span>}
+                  </p>
+                  <p style={{ fontSize:14, fontWeight:900, color:C.pri }}>₹{s.revenue}</p>
                 </div>
-                <p style={{ fontSize:14, fontWeight:900, color:C.pri }}>₹{s.revenue}</p>
+                <div style={{ height:6, background:"#F0F2F8", borderRadius:4, margin:"6px 0" }}>
+                  <div style={{ width:`${Math.round((s.revenue / topRevenue) * 100)}%`, height:"100%", background:C.pri, borderRadius:4 }} />
+                </div>
+                <p style={{ fontSize:11, color:C.muted }}>
+                  {s.bookings} customer{s.bookings === 1 ? "" : "s"} served
+                  {s.minutes > 0 && ` · ${Math.floor(s.minutes / 60) ? `${Math.floor(s.minutes / 60)}h ` : ""}${s.minutes % 60}m of work`}
+                  {s.bookings > 0 && ` · avg ₹${Math.round(s.revenue / s.bookings)}/visit`}
+                </p>
+                {s.topServices.length > 0 && (
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:6 }}>
+                    {s.topServices.map(t => (
+                      <span key={t.name} style={{ fontSize:10, fontWeight:800, color:C.text, background:C.inputBg || "#F5F7FB", border:"1px solid #E8ECF5", borderRadius:10, padding:"2px 8px" }}>
+                        {t.name} × {t.count}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))
+            ));
+          })()}
+          {data.unassigned?.bookings > 0 && (
+            <p style={{ fontSize:11, color:C.muted, marginTop:8, borderTop:"1px solid #F0F2F8", paddingTop:10 }}>
+              {data.unassigned.bookings} completed visit{data.unassigned.bookings === 1 ? "" : "s"} (₹{data.unassigned.revenue}) had no team member assigned.
+            </p>
           )}
+        </Card>
+      ) : (
+        <Card>
+          <SectionHeader icon={Users} title="Team Performance" />
+          <p style={{ fontSize:12, color:C.muted, textAlign:"center", padding:"8px 0" }}>
+            Add your team under Settings → Team / Staff to see how many customers, which services and how much revenue each person handles.
+          </p>
         </Card>
       )}
     </div>
