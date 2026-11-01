@@ -16,23 +16,18 @@ const sendToken = (user, code, res, message) => {
 
 // POST /api/auth/register
 exports.register = async (req, res) => {
-  try {
-    const { name, email, phone, password, role, city, area , notifPrefs, savedAddresses} = req.body;
-    if (!name||!email||!phone||!password) return res.status(400).json({ success:false, message:"Please fill all fields" });
-    if (await User.findOne({ email })) return res.status(400).json({ success:false, message:"Email already registered. Please login." });
-    // Only allow customer or owner — never trust client-sent "admin" role
-    const allowedRole = role === "owner" ? "owner" : "customer";
-    if (await User.findOne({ phone, role: allowedRole })) return res.status(400).json({ success:false, message:"Phone number already registered." });
-
-    const referralCode = generateReferralCode(req.body.name);
-    const user = await User.create({
-      referralCode, name, email, phone, password, role: allowedRole, city: city||"", area: area||"" });
-    sendToken(user, 201, res, "Account created! Welcome to Sloty 🎉");
-  } catch (err) {
-    if (err.name==="ValidationError") return res.status(400).json({ success:false, message: Object.values(err.errors)[0].message });
-    res.status(500).json({ success:false, message:"Server error", error: process.env.NODE_ENV==="development"?err.message:undefined });
-  }
+  // Closed: nothing in the app uses it (customers/owners sign up by phone
+  // OTP or Google, admins are created by script), and it created accounts
+  // with any unverified phone/email — a way to pre-claim someone's
+  // identity before they join.
+  res.status(410).json({ success:false, message:"Please sign up with your phone number." });
 };
+
+// A phone number just proven by OTP takes precedence over an account
+// that only typed it into its profile: that account loses the number
+// (it was never theirs to prove) instead of being logged into.
+const releaseUnverifiedPhone = (phone, role) =>
+  User.updateMany({ phone, role, phoneVerified: false }, { $set: { phone: null }, $unset: { phoneVerified: 1 } });
 
 // POST /api/auth/login
 exports.login = async (req, res) => {
@@ -83,8 +78,11 @@ exports.updateProfile = async (req, res) => {
     if (city)   updates.city   = city;
     if (area !== undefined) updates.area = area;
     if (avatar) updates.avatar = avatar;
-    if (phone)  updates.phone  = phone;
-    if (email)  updates.email  = email;
+    // Typed-in contact details aren't proven, so they're flagged — a later
+    // OTP/Google login proving the same number/email wins over this claim
+    // (see releaseUnverifiedPhone and googleLogin).
+    if (phone && phone !== req.user.phone) { updates.phone = phone; updates.phoneVerified = false; }
+    if (email && String(email).toLowerCase().trim() !== req.user.email) { updates.email = email; updates.emailVerified = false; }
     if (notifPrefs) updates.notifPrefs = notifPrefs;
     if (savedAddresses) updates.savedAddresses = savedAddresses;
 
@@ -198,11 +196,15 @@ exports.sendOtp = async (req, res) => {
     // since those are now two separate accounts.
     const existingUser = await User.findOne({ phone, role });
 
+    // The OTP is never put in the response — not even in dev mode. It used
+    // to be returned whenever no SMS provider was configured (the normal
+    // state, since the app logs in via Firebase), which let anyone log
+    // into any account knowing only its phone number. Dev mode still
+    // prints it to the backend terminal (see config/sms.js).
     res.status(200).json({
       success: true,
       message: smsResult.dev ? `OTP sent (dev mode — check backend terminal)` : "OTP sent to your phone",
       isNewUser: !existingUser,
-      devOtp: smsResult.dev ? otp : undefined, // only present when no SMS provider is configured yet
     });
   } catch (err) {
     console.error("SEND OTP ERROR:", err.message);
@@ -244,6 +246,7 @@ exports.verifyOtpLogin = async (req, res) => {
 
     await PhoneOtp.deleteMany({ phone }); // OTP used — clean up
 
+    await releaseUnverifiedPhone(phone, role);
     let user = await User.findOne({ phone, role });
     let isNewAccount = false;
 
@@ -273,6 +276,7 @@ exports.verifyOtpLogin = async (req, res) => {
       isNewAccount = true;
     } else {
       user.isVerified = true;
+      user.phoneVerified = true;
       user.lastLogin = Date.now();
       await user.save({ validateBeforeSave:false });
     }
@@ -315,6 +319,7 @@ exports.verifyFirebaseLogin = async (req, res) => {
       return res.status(400).json({ success:false, message:"Could not read a valid Indian phone number from verification." });
     }
 
+    await releaseUnverifiedPhone(phone, role);
     let user = await User.findOne({ phone, role });
     let isNewAccount = false;
 
@@ -355,6 +360,7 @@ exports.verifyFirebaseLogin = async (req, res) => {
       }
     } else {
       user.isVerified = true;
+      user.phoneVerified = true;
       user.lastLogin = Date.now();
       await user.save({ validateBeforeSave:false });
     }

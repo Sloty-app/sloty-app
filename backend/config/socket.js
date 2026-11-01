@@ -7,6 +7,9 @@
 // production, since accepting any origin is not safe for a public
 // server.
 const { Server } = require("socket.io");
+const jwt   = require("jsonwebtoken");
+const User  = require("../models/User");
+const Store = require("../models/Store");
 
 let io;
 
@@ -32,13 +35,39 @@ function initSocket(server) {
     transports: ["websocket", "polling"],
   });
 
+  // Every socket must carry the same JWT the REST API uses. Before this,
+  // anyone could connect without logging in and join any "user:<id>"
+  // room — owner ids are public via the store API — and read that
+  // user's live new-booking alerts, chat notices and booking updates.
+  io.use((socket, next) => {
+    try {
+      const { id } = jwt.verify(socket.handshake.auth?.token || "", process.env.JWT_SECRET, { algorithms: ["HS256"] });
+      socket.userId = String(id);
+      next();
+    } catch {
+      next(new Error("Please login to continue"));
+    }
+  });
+
   io.on("connection", (socket) => {
     console.log(`🔌 Socket connected: ${socket.id}`);
 
-    socket.on("join", (room) => {
-      if (!room) return;
-      socket.join(room);
-      console.log(`   ↳ ${socket.id} joined room: ${room}`);
+    // Only your own user room, or a store room for a store you own.
+    socket.on("join", async (room) => {
+      if (typeof room !== "string") return;
+      try {
+        let allowed = room === `user:${socket.userId}`;
+        const storeRoom = room.match(/^store:([0-9a-f]{24}):\d{4}-\d{2}-\d{2}$/);
+        if (!allowed && storeRoom) {
+          const user = await User.findById(socket.userId).select("role");
+          allowed = user?.role === "admin" || !!(await Store.exists({ _id: storeRoom[1], owner: socket.userId }));
+        }
+        if (!allowed) return;
+        socket.join(room);
+        console.log(`   ↳ ${socket.id} joined room: ${room}`);
+      } catch (err) {
+        console.error("Socket join error:", err.message);
+      }
     });
 
     socket.on("leave", (room) => {

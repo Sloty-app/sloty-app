@@ -13,14 +13,21 @@
 // fires on the initial connection AND every reconnect. Room membership
 // is now durable across connection drops instead of one-shot.
 import { io } from "socket.io-client";
+import { getToken } from "../api";
 
 const SOCKET_URL = (import.meta.env.VITE_API_URL || "http://localhost:5001/api").replace(/\/api\/?$/, "");
 
 let socket = null;
+let socketToken = null; // login the current connection was opened with
 const desiredRooms = new Set(); // every room the app currently wants to be in
 
 export function getSocket() {
-  if (socket) return socket;
+  // The server only lets a socket into the logged-in user's own rooms,
+  // so a different login (logout -> login as someone else) needs a fresh
+  // connection carrying the new token.
+  if (socket && socketToken === getToken()) return socket;
+  if (socket) { socket.disconnect(); socket = null; }
+  socketToken = getToken();
 
   socket = io(SOCKET_URL, {
     transports: ["polling", "websocket"], // start on polling (works everywhere), upgrade to websocket when the network allows it
@@ -28,6 +35,7 @@ export function getSocket() {
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
     withCredentials: true,
+    auth: (cb) => cb({ token: getToken() }), // re-read on every reconnect
   });
 
   socket.on("connect", () => {

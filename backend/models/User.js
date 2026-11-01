@@ -4,13 +4,20 @@ const bcrypt   = require("bcryptjs");
 
 const UserSchema = new mongoose.Schema({
   name:     { type: String, required: [true, "Name is required"], trim: true, maxlength: 50 },
-  email:    { type: String, required: [true, "Email is required"], lowercase: true, trim: true, match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, "Invalid email"] },
+  email:    { type: String, required: [true, "Email is required"], lowercase: true, trim: true, match: [/^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/, "Invalid email"] }, // the previous nested-quantifier pattern backtracked exponentially — one ~40-char value froze the server
   // Not required — Google-only accounts legitimately have no phone
   // number (set to null explicitly, not just omitted), and the schema
   // previously rejecting that was a pre-existing bug that would have
   // broken Google sign-in the moment it actually ran through full
   // validation.
   phone:    { type: String, match: [/^[6-9]\d{9}$/, "Invalid Indian phone number"] },
+  // false = typed into the profile without proof. A phone OTP / Google
+  // login proving that number/email takes precedence over such a claim,
+  // so nobody can pre-claim someone else's identity and later share or
+  // control the account the real person logs into. Unset (older
+  // accounts, or proven at signup) is treated as verified.
+  phoneVerified: { type: Boolean },
+  emailVerified: { type: Boolean },
   password: { type: String, required: [true, "Password is required"], minlength: 6, select: false },
   role:     { type: String, enum: ["customer","owner","admin"], default: "customer" },
   city:     { type: String, default: "" },
@@ -45,11 +52,16 @@ const UserSchema = new mongoose.Schema({
 // book as a customer at other stores, without those being the same
 // login. Each individual (phone, role) pair still must be unique, so
 // a phone genuinely can't have two owner accounts, for example.
-// sparse:true is important here — Google-only accounts have
-// phone:null, and without sparse, every null-phone account of the
-// same role would incorrectly collide with every other one on that
-// shared null value.
-UserSchema.index({ phone: 1, role: 1 }, { unique: true, sparse: true });
+// Only accounts that actually HAVE a phone are indexed — Google-only
+// accounts have phone:null. This used to be sparse:true, but a compound
+// sparse index still indexes every document that has ANY of its fields,
+// and role is always set — so phone:null accounts all collided and the
+// second Google-only customer could never sign up. The old index
+// (phone_1_role_1) is dropped once at startup — see server.js.
+UserSchema.index(
+  { phone: 1, role: 1 },
+  { unique: true, name: "phone_role_unique", partialFilterExpression: { phone: { $type: "string" } } }
+);
 
 // Same reasoning applies to email — a Google account (or an OTP
 // placeholder email) needs to be able to exist as a separate customer

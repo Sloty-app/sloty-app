@@ -34,7 +34,14 @@ mongoose.connect(process.env.MONGO_URI, {
   minPoolSize: 1,
   family: 4,
 })
-  .then(() => console.log("✅ MongoDB Connected"))
+  .then(() => {
+    console.log("✅ MongoDB Connected");
+    // One-time migration: the old (phone, role) index blocked every
+    // second phone-less (Google-only) account — see models/User.js.
+    require("./models/User").collection.dropIndex("phone_1_role_1")
+      .then(() => console.log("✅ Dropped old phone_1_role_1 index"))
+      .catch(() => {}); // already gone
+  })
   .catch(err => { console.error("❌ MongoDB Failed:", err.message); process.exit(1); });
 
 // Lifecycle logging — without this, a dropped connection (Atlas M0 is

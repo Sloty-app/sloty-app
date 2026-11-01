@@ -354,6 +354,7 @@ exports.createBooking = async (req, res) => {
         walletDeductedAmount = Math.min(customerForWallet.walletBalance, priceAfterOffer);
       }
     }
+    const paidFullyByWallet = paymentMode === "upi" && priceAfterOffer > 0 && walletDeductedAmount >= priceAfterOffer;
 
     // Everything that represents "the booking happened" — creating the
     // booking record itself, incrementing the store's counter, and
@@ -398,16 +399,26 @@ exports.createBooking = async (req, res) => {
         tokenNumber,
         otp,
         walletDeducted: walletDeductedAmount,
+        // UPI fully covered by wallet credit: nothing left to charge on
+        // Razorpay (a ₹0 order is rejected), so it's paid right away.
+        ...(paidFullyByWallet ? { paymentStatus: "paid" } : {}),
         customerLocation: customerLocation?.lat ? { lat: customerLocation.lat, lng: customerLocation.lng } : undefined,
         estimatedTravelMinutes,
       }], { session });
 
-      await Store.findByIdAndUpdate(storeId, { $inc:{ totalBookings:1 } }, { session });
+      await Store.findByIdAndUpdate(storeId, { $inc:{ totalBookings:1, ...(paidFullyByWallet ? { pendingUpiBalance: priceAfterOffer } : {}) } }, { session });
 
       if (walletDeductedAmount > 0 && customerForWallet) {
+        // Conditional decrement instead of saving a balance read earlier —
+        // two bookings placed at once both read the same balance and both
+        // spent it. If the balance no longer covers this, roll back.
+        const debited = await User.findOneAndUpdate(
+          { _id: req.user.id, walletBalance: { $gte: walletDeductedAmount } },
+          { $inc: { walletBalance: -walletDeductedAmount } },
+          { session }
+        );
+        if (!debited) throw Object.assign(new Error("Wallet balance changed"), { walletChanged: true });
         walletDeducted = walletDeductedAmount;
-        customerForWallet.walletBalance -= walletDeducted;
-        await customerForWallet.save({ session });
       }
 
       await session.commitTransaction();
@@ -471,6 +482,11 @@ exports.createBooking = async (req, res) => {
     // for the same slot — the second one lost cleanly at the DB level.
     if (err.code === 11000) {
       return res.status(400).json({ success:false, message:"This slot was just taken by another customer. Please choose another time." });
+    }
+    // Two bookings racing for the same wallet (or slot counter) surface
+    // either as our own check or as MongoDB's transaction write conflict.
+    if (err.walletChanged || err.code === 112 || err.errorLabels?.includes?.("TransientTransactionError")) {
+      return res.status(409).json({ success:false, message:"Something changed while booking (another booking just went through). Please try again." });
     }
     console.error("BOOKING ERROR:", err.message);
     res.status(500).json({ success:false, message:"Server error", error: process.env.NODE_ENV==="development"?err.message:undefined });
@@ -961,37 +977,40 @@ exports.cancelBooking = async (req, res) => {
     // Cash bookings and unpaid/abandoned UPI bookings have nothing to
     // refund, so this simply doesn't apply to them.
     let refundInfo = null;
-    if (booking.paymentMode === "upi" && booking.paymentStatus === "paid") {
-      const upiPaidAmount = Math.max(0, (booking.service?.price || 0) - (booking.walletDeducted || 0));
+    const isPaidUpi = booking.paymentMode === "upi" && booking.paymentStatus === "paid";
+    // Wallet credit spent on the booking comes back too, for any payment
+    // mode — before, only the UPI-paid part was returned, so wallet
+    // credit used on a cancelled booking simply vanished.
+    const upiPaidAmount = isPaidUpi ? Math.max(0, (booking.service?.price || 0) - (booking.walletDeducted || 0)) : 0;
+    const refundable = upiPaidAmount + (booking.walletDeducted || 0);
+    if (refundable > 0) {
       const hoursUntilSlot = (getSlotDateTime(booking.date, booking.timeSlot).getTime() - Date.now()) / (1000 * 60 * 60);
 
-      if (upiPaidAmount > 0) {
-        if (hoursUntilSlot >= REFUND_NOTICE_HOURS) {
-          const customer = await User.findById(booking.customer);
-          customer.walletBalance = (customer.walletBalance || 0) + upiPaidAmount;
-          await customer.save();
-          // The owner's pending payout balance was credited this same
-          // amount when the payment was originally verified — since
-          // the customer is now getting it back, the owner shouldn't
-          // still show it as money they're owed. Clamped at 0 so this
-          // can never push the balance negative even in an edge case.
+      if (hoursUntilSlot >= REFUND_NOTICE_HOURS) {
+        await User.findByIdAndUpdate(booking.customer, { $inc: { walletBalance: refundable } });
+        // A paid UPI booking credited the store's pending payout with
+        // the full price when it was verified — since the customer is
+        // now getting it back, the owner shouldn't still show it as
+        // money they're owed. Clamped at 0 so this can never push the
+        // balance negative even in an edge case.
+        if (isPaidUpi) {
           await Store.updateOne(
             { _id: booking.store._id },
-            [{ $set: { pendingUpiBalance: { $max: [0, { $subtract: ["$pendingUpiBalance", upiPaidAmount] }] } } }]
+            [{ $set: { pendingUpiBalance: { $max: [0, { $subtract: ["$pendingUpiBalance", booking.service?.price || 0] }] } } }]
           );
-          booking.refundStatus = "refunded_to_wallet";
-          booking.refundAmount = upiPaidAmount;
-          refundInfo = { refunded: true, amount: upiPaidAmount };
-        } else {
-          // Late cancellation — no refund, and the store's pending
-          // balance is deliberately left untouched here: the owner
-          // held that slot and lost the chance to fill it with
-          // someone else, so they keep the payment as compensation,
-          // matching common practice on real booking platforms.
-          booking.refundStatus = "forfeited";
-          booking.refundAmount = 0;
-          refundInfo = { refunded: false, amount: 0, reason: `Cancelled within ${REFUND_NOTICE_HOURS} hours of the slot` };
         }
+        booking.refundStatus = "refunded_to_wallet";
+        booking.refundAmount = refundable;
+        refundInfo = { refunded: true, amount: refundable };
+      } else {
+        // Late cancellation — no refund, and the store's pending
+        // balance is deliberately left untouched here: the owner
+        // held that slot and lost the chance to fill it with
+        // someone else, so they keep the payment as compensation,
+        // matching common practice on real booking platforms.
+        booking.refundStatus = "forfeited";
+        booking.refundAmount = 0;
+        refundInfo = { refunded: false, amount: 0, reason: `Cancelled within ${REFUND_NOTICE_HOURS} hours of the slot` };
       }
     }
 

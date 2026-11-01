@@ -22,11 +22,36 @@ exports.googleLogin = async (req, res) => {
     const role = req.body.role === "owner" ? "owner" : "customer";
     if (!accessToken) return res.status(400).json({ success:false, message:"No token provided" });
 
-    const googleRes = await fetch(`https://www.googleapis.com/oauth2/v1/userinfo?access_token=${accessToken}`);
+    // The token must have been issued to Sloty's own Google client. The
+    // userinfo endpoint below accepts a token from ANY app, so without
+    // this check a token from some other site's "Sign in with Google"
+    // could be replayed here to log in as that person.
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      console.error("GOOGLE_CLIENT_ID is not set — Google sign-in is disabled until it is.");
+      return res.status(503).json({ success:false, message:"Google sign-in isn't available right now" });
+    }
+    const infoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`);
+    const info = infoRes.ok ? await infoRes.json() : {};
+    if (info.aud !== process.env.GOOGLE_CLIENT_ID && info.azp !== process.env.GOOGLE_CLIENT_ID) {
+      return res.status(401).json({ success:false, message:"Invalid Google token" });
+    }
+
+    const googleRes = await fetch(`https://www.googleapis.com/oauth2/v1/userinfo?access_token=${encodeURIComponent(accessToken)}`);
     if (!googleRes.ok) return res.status(401).json({ success:false, message:"Invalid Google token" });
-    const { email, name, picture, id: googleId } = await googleRes.json();
+    const { email: rawEmail, name, picture, id: googleId, verified_email } = await googleRes.json();
+    const email = rawEmail?.toLowerCase();
 
     if (!email) return res.status(400).json({ success:false, message:"Google account has no email address" });
+    if (verified_email === false) return res.status(400).json({ success:false, message:"Please verify your Google account's email first" });
+
+    // An account that only TYPED this email into its profile doesn't get
+    // linked to (that would hand the Google user's sign-in to whoever
+    // claimed their address first). It loses the address instead, and
+    // the person who just proved it gets their own account.
+    await User.updateMany(
+      { email, role, emailVerified: false, googleId: { $ne: googleId } },
+      [{ $set: { email: { $concat: [{ $toString: "$_id" }, "@unverified.sloty.com"] } } }]
+    );
 
     let user = await User.findOne({ email, role });
     if (!user) {
@@ -35,7 +60,7 @@ exports.googleLogin = async (req, res) => {
         name: name || email.split("@")[0],
         email,
         phone: null, // null (not "") so the sparse unique index correctly ignores multiple Google-only accounts
-        password: Math.random().toString(36),
+        password: require("crypto").randomBytes(20).toString("hex"), // was Math.random() — guessable, and this account can log in by password
         role,
         googleId,
         avatar: picture,
@@ -47,6 +72,7 @@ exports.googleLogin = async (req, res) => {
       // with Google for the first time — link the accounts instead of
       // creating a duplicate.
       user.googleId = googleId;
+      user.emailVerified = true;
       if (picture && !user.avatar) user.avatar = picture;
       await user.save();
     }

@@ -12,6 +12,7 @@
 const crypto = require("crypto");
 const Booking = require("../models/Booking");
 const Store = require("../models/Store");
+const User = require("../models/User");
 const { razorpay, hasRealCredentials } = require("../config/razorpay");
 
 // Credits the store's pending settlement balance once a UPI payment is
@@ -19,6 +20,34 @@ const { razorpay, hasRealCredentials } = require("../config/razorpay");
 // as "available to settle" on the owner's side.
 async function creditStoreBalance(storeId, amount) {
   await Store.findByIdAndUpdate(storeId, { $inc: { pendingUpiBalance: amount } });
+}
+
+// Flips a verified booking to paid exactly once. The old code saved and
+// credited the store on every call, so re-sending the same (valid)
+// verification credited the store's payout balance again each time.
+// A booking cancelled before the payment landed (e.g. the abandoned-
+// payment job ran first) keeps its cancellation and the money goes back
+// to the customer's wallet instead of to the store.
+async function markPaid(res, booking, paymentId, message) {
+  const claimed = await Booking.findOneAndUpdate(
+    { _id: booking._id, paymentStatus: { $ne: "paid" }, razorpayOrderId: booking.razorpayOrderId },
+    { paymentStatus: "paid", razorpayPaymentId: paymentId },
+    { new: true }
+  );
+  if (!claimed) {
+    const current = await Booking.findById(booking._id);
+    return res.status(200).json({ success:true, message:"Payment already verified", booking: current });
+  }
+  if (claimed.status === "cancelled") {
+    const upiAmount = Math.max(0, (claimed.service?.price || 0) - (claimed.walletDeducted || 0));
+    await User.findByIdAndUpdate(claimed.customer, { $inc: { walletBalance: upiAmount } });
+    claimed.refundStatus = "refunded_to_wallet";
+    claimed.refundAmount = (claimed.refundAmount || 0) + upiAmount;
+    await claimed.save({ validateBeforeSave:false });
+    return res.status(200).json({ success:true, message:"This booking had already been cancelled, so your payment was added to your Sloty wallet.", booking: claimed });
+  }
+  await creditStoreBalance(claimed.store, claimed.service.price);
+  return res.status(200).json({ success:true, message, booking: claimed });
 }
 
 // POST /api/payments/create-order  { bookingId }
@@ -35,8 +64,14 @@ exports.createOrder = async (req, res) => {
     if (booking.paymentStatus === "paid") {
       return res.status(400).json({ success:false, message:"This booking is already paid for" });
     }
+    if (booking.status !== "confirmed") {
+      return res.status(400).json({ success:false, message:`This booking is ${booking.status.replace("_", " ")} — nothing to pay.` });
+    }
 
-    const amountInPaise = Math.round(booking.service.price * 100);
+    // Only what the wallet didn't cover — charging the full price on top
+    // of the wallet deduction made the customer pay that part twice.
+    const amountInPaise = Math.round((booking.service.price - (booking.walletDeducted || 0)) * 100);
+    if (amountInPaise <= 0) return res.status(400).json({ success:false, message:"Nothing left to pay on this booking" });
 
     if (!hasRealCredentials) {
       // DEV MODE — no real Razorpay account connected yet. Return a
@@ -95,11 +130,7 @@ exports.verifyPayment = async (req, res) => {
       // DEV MODE — trust it, since this is only reachable with a
       // dev_order_ id that createOrder itself generated above; there's
       // no real gateway to verify against yet.
-      booking.paymentStatus = "paid";
-      booking.razorpayPaymentId = `dev_payment_${Date.now()}`;
-      await booking.save({ validateBeforeSave:false });
-      await creditStoreBalance(booking.store, booking.service.price);
-      return res.status(200).json({ success:true, message:"Payment verified (dev mode)", booking });
+      return markPaid(res, booking, `dev_payment_${Date.now()}`, "Payment verified (dev mode)");
     }
 
     // REAL MODE — the critical security step. Never trust the frontend's
@@ -125,12 +156,7 @@ exports.verifyPayment = async (req, res) => {
       return res.status(400).json({ success:false, message:"Payment verification failed — signature mismatch" });
     }
 
-    booking.paymentStatus = "paid";
-    booking.razorpayPaymentId = razorpay_payment_id;
-    await booking.save({ validateBeforeSave:false });
-    await creditStoreBalance(booking.store, booking.service.price);
-
-    res.status(200).json({ success:true, message:"Payment verified", booking });
+    return markPaid(res, booking, razorpay_payment_id, "Payment verified");
   } catch (err) {
     console.error("verifyPayment error:", err.message);
     res.status(500).json({ success:false, message:"Could not verify payment. Please contact support if money was deducted." });

@@ -15,6 +15,7 @@
 // way of freeing a slot.
 const Booking = require("../models/Booking");
 const SlotCapacity = require("../models/SlotCapacity");
+const User = require("../models/User");
 const { emitToRoom } = require("./socket");
 
 const GRACE_PERIOD_MINUTES = 5;
@@ -38,6 +39,10 @@ async function runAbandonedPaymentCleanup() {
       { status: "cancelled", cancelReason: "Payment was never completed" }
     );
     if (!claimed) continue;
+    // Wallet credit put towards the unfinished payment goes back.
+    if (booking.walletDeducted > 0) {
+      await User.findByIdAndUpdate(booking.customer, { $inc: { walletBalance: booking.walletDeducted } });
+    }
 
     // Same capacity-release logic as a normal cancellation — pooled
     // (no named staff) bookings reserved a seat via SlotCapacity at
