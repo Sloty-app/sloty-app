@@ -8,6 +8,7 @@ const Store = require("../models/Store");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
 const mongoose = require("mongoose");
+const { getISTDateString } = require("../utils/date");
 
 // A booking's real, realized revenue as a Mongo aggregation expression
 // — original price plus any add-on services, but only counting add-ons
@@ -142,11 +143,11 @@ exports.getDashboardAnalytics = async (req, res) => {
     // on the chart no matter how much came in, not even as a zero. Fixed
     // by counting backward from now instead, which always lands the
     // last entry on today's own calendar date.
-    const now = new Date();
+    // Keys are IST calendar dates to match booking.date — toISOString()
+    // gave the UTC date, which dropped today between midnight and 5:30 AM IST.
+    const now = Date.now();
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = getISTDateString(new Date(now - i * 24 * 60 * 60 * 1000));
       revenueByDay[key] = 0;
       noShowByDay[key]  = { total: 0, noShow: 0 };
     }

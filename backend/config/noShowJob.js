@@ -10,7 +10,7 @@
 
 const Booking = require("../models/Booking");
 const User    = require("../models/User");
-const { getISTNow, getISTDateString } = require("../utils/date");
+const { getISTDateString } = require("../utils/date");
 const sendNotification = require("./notify");
 
 const WARNING_THRESHOLD    = 3; // warn customer after this many no-shows
@@ -72,9 +72,9 @@ exports.runNoShowCheck = async () => {
 
       // Notify and enforce based on threshold
       if (customer.noShowCount >= RESTRICTION_THRESHOLD) {
-        const restrictedUntil = new Date(
-          getISTNow().getTime() + RESTRICTION_DAYS * 24 * 60 * 60 * 1000
-        );
+        // A real instant: compared against new Date() at booking time, so
+        // an IST-shifted base would stretch the ban by an extra 5.5 hours.
+        const restrictedUntil = new Date(Date.now() + RESTRICTION_DAYS * 24 * 60 * 60 * 1000);
         await User.findByIdAndUpdate(booking.customer, {
           bookingRestrictedUntil: restrictedUntil,
         });

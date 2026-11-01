@@ -30,9 +30,14 @@ async function runAbandonedPaymentCleanup() {
   });
 
   for (const booking of staleBookings) {
-    booking.status = "cancelled";
-    booking.cancelReason = "Payment was never completed";
-    await booking.save();
+    // Conditional on the status just read — if the customer cancelled (or
+    // the booking otherwise moved on) in the meantime, skip it rather than
+    // releasing its seats a second time.
+    const claimed = await Booking.findOneAndUpdate(
+      { _id: booking._id, status: booking.status, paymentStatus: "pending" },
+      { status: "cancelled", cancelReason: "Payment was never completed" }
+    );
+    if (!claimed) continue;
 
     // Same capacity-release logic as a normal cancellation — pooled
     // (no named staff) bookings reserved a seat via SlotCapacity at

@@ -15,11 +15,10 @@ const getISTDateString = (date = new Date()) => {
   }
 };
 
-const addDaysIST = (days) => {
-  const d = getISTNow();
-  d.setUTCDate(d.getUTCDate() + days);
-  return getISTDateString(d);
-};
+// getISTDateString() converts to IST itself, so it must be given a real
+// instant — passing it getISTNow() (already shifted +5:30) double-shifts
+// and returns tomorrow's date from 6:30 PM IST onward.
+const addDaysIST = (days) => getISTDateString(new Date(Date.now() + days * 24 * 60 * 60 * 1000));
 
 // A plain "YYYY-MM-DD" from an <input type="date"> has no timezone of
 // its own — new Date("2026-09-03") parses it as UTC midnight, which is

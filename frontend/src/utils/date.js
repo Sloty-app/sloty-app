@@ -15,12 +15,12 @@ export const getISTDateString = (date = new Date()) => {
   }
 };
 
+// Real instants (now + i days), NOT shifted by the IST offset —
+// getISTDateString() already converts to IST itself, so feeding it a
+// pre-shifted date double-shifted it: from 6:30 PM IST the "Today" chip
+// sent tomorrow's date and customers booked the wrong day.
 export const getNext7Days = () =>
-  Array.from({ length: 7 }, (_, i) => {
-    const d = getISTNow();
-    d.setUTCDate(d.getUTCDate() + i);
-    return new Date(d.getTime());
-  });
+  Array.from({ length: 7 }, (_, i) => new Date(Date.now() + i * 24 * 60 * 60 * 1000));
 
 export const formatDisplayDate = (dateStr) => {
   try {
@@ -33,14 +33,13 @@ export const formatDisplayDate = (dateStr) => {
 };
 
 /**
- * IST-safe calendar field getters.
- * Use these instead of d.getDay()/getDate()/getMonth() on dates returned
- * by getNext7Days() — those dates are constructed by shifting the epoch
- * forward by the IST offset, so reading them with LOCAL getters
- * (which apply the browser's own timezone on top) double-shifts the
- * result. Always decode with the UTC getters instead — that matches
- * how getISTDateString() reads the same dates for the API calls.
+ * IST calendar field getters for real instants (e.g. from getNext7Days()).
+ * Use these instead of d.getDay()/getDate()/getMonth(), which read the
+ * browser's own timezone — wrong for anyone not on IST. Shifting by the
+ * IST offset and reading UTC fields gives the date as it is in India,
+ * the same day getISTDateString() sends to the API.
  */
-export const getISTDay = (date) => date.getUTCDay();
-export const getISTDateNum = (date) => date.getUTCDate();
-export const getISTMonthIdx = (date) => date.getUTCMonth();
+const toISTFields = (date) => new Date(date.getTime() + IST_OFFSET_MS);
+export const getISTDay = (date) => toISTFields(date).getUTCDay();
+export const getISTDateNum = (date) => toISTFields(date).getUTCDate();
+export const getISTMonthIdx = (date) => toISTFields(date).getUTCMonth();

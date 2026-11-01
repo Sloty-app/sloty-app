@@ -70,6 +70,50 @@ const staffHasClash = async (storeId, date, staffId, startMin, duration, exclude
   });
 };
 
+// The server-side twin of everything getAvailableSlots hides from the
+// customer. That list is only a UI hint — a stale screen (slots loaded
+// before the owner closed the day) or a direct API call could otherwise
+// book a past time, a closed day, a blocked slot, or months ahead.
+// Returns an error message, or null when the booking is allowed.
+const bookingRuleError = (store, date, timeSlot, duration) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || !/^\d{1,2}:\d{2} (AM|PM)$/.test(timeSlot || "")) {
+    return "Please pick a valid date and time slot.";
+  }
+  const start = timeToMinutes(timeSlot), end = start + duration;
+
+  const today = getISTDateString();
+  if (date < today) return "That date has already passed. Please pick another day.";
+  if (date === today) {
+    const now = getISTNow();
+    if (start <= now.getUTCHours() * 60 + now.getUTCMinutes()) return "That time has already passed. Please pick a later slot.";
+  }
+  const maxDays = store.maxAdvanceBooking || 7;
+  if (date > addDaysIST(maxDays)) return `${store.name} takes bookings up to ${maxDays} days ahead. Please pick an earlier date.`;
+
+  const [openH, openM] = store.workingHours.open.split(":").map(Number);
+  const [closeH, closeM] = store.workingHours.close.split(":").map(Number);
+  if (start < openH * 60 + openM || end > closeH * 60 + closeM) {
+    return `Selected services take ${duration} mins, which would exceed store closing time (${store.workingHours.close}). Please choose an earlier time.`;
+  }
+
+  const overlappingBreak = (store.breakTimes || []).find(b => {
+    const [bh, bm] = b.open.split(":").map(Number);
+    const [ch, cm] = b.close.split(":").map(Number);
+    return start < ch * 60 + cm && end > bh * 60 + bm;
+  });
+  if (overlappingBreak) return `This slot overlaps store ${overlappingBreak.label || "Break"}. Please select another time.`;
+
+  const blocked = (store.blockedSlots || []).find(b => b.date === date);
+  if (blocked) {
+    if (!blocked.slots?.length) return `${store.name} is closed on this date${blocked.reason ? ` (${blocked.reason})` : ""}. Please pick another day.`;
+    const step = store.slotDuration || 30;
+    if (blocked.slots.some(s => start < timeToMinutes(s) + step && end > timeToMinutes(s))) {
+      return "The store has blocked this time. Please choose another slot.";
+    }
+  }
+  return null;
+};
+
 const generateSlots = (open, close, interval, serviceDuration) => {
   const slots = [];
   let [h, m] = open.split(":").map(Number);
@@ -144,7 +188,7 @@ exports.getAvailableSlots = async (req, res) => {
 
     const istNow = getISTNow();
     const currentTotal = istNow.getUTCHours() * 60 + istNow.getUTCMinutes();
-    const today  = getISTDateString(istNow);
+    const today  = getISTDateString(); // real instant — passing istNow here double-shifted the date after 6:30 PM IST
     const isToday = date === today;
 
     // Pooled-capacity stores (no named staff) can hold more than one
@@ -249,32 +293,9 @@ exports.createBooking = async (req, res) => {
     const totalDuration = serviceBreakdown.reduce((sum, s) => sum + s.duration, 0);
     const combinedName  = serviceBreakdown.map(s => s.name).join(" + ");
 
-    // Closing time & break boundary enforcement
-    const [openH, openM] = store.workingHours.open.split(":").map(Number);
-    const [closeH, closeM] = store.workingHours.close.split(":").map(Number);
-    const storeOpenMinutes = openH * 60 + openM;
-    const storeCloseMinutes = closeH * 60 + closeM;
+    const ruleError = bookingRuleError(store, date, timeSlot, totalDuration);
+    if (ruleError) return res.status(400).json({ success:false, message: ruleError });
     const slotStartMinutes = timeToMinutes(timeSlot);
-
-    if (slotStartMinutes < storeOpenMinutes || slotStartMinutes + totalDuration > storeCloseMinutes) {
-      return res.status(400).json({
-        success: false,
-        message: `Selected services take ${totalDuration} mins, which would exceed store closing time (${store.workingHours.close}). Please choose an earlier time.`
-      });
-    }
-
-    const breakRanges = (store.breakTimes || []).map(b => {
-      const [bh, bm] = b.open.split(":").map(Number);
-      const [ch, cm] = b.close.split(":").map(Number);
-      return { start: bh * 60 + bm, end: ch * 60 + cm, label: b.label || "Break" };
-    });
-    const overlappingBreak = breakRanges.find(r => slotStartMinutes < r.end && (slotStartMinutes + totalDuration) > r.start);
-    if (overlappingBreak) {
-      return res.status(400).json({
-        success: false,
-        message: `This slot overlaps store ${overlappingBreak.label}. Please select another time.`
-      });
-    }
 
     // Apply an offer discount if one was selected — always recomputed
     // server-side from the real offer record, never trusting a
@@ -621,6 +642,8 @@ exports.getLiveQueue = async (req, res) => {
   }
 };
 
+const ALLOWED_STATUS_CHANGES = { confirmed: ["no_show"], in_progress: ["completed"] };
+
 // PUT /api/bookings/:id/status — Owner updates booking status
 exports.updateStatus = async (req, res) => {
   try {
@@ -630,9 +653,20 @@ exports.updateStatus = async (req, res) => {
     if (booking.store?.owner?.toString() !== req.user.id && req.user.role !== "admin") {
       return res.status(403).json({ success: false, message: "Not authorized" });
     }
+    // Only real lifecycle moves (the two the owner app offers; starting a
+    // service goes through verify-otp). Anything else let an owner mark a
+    // booking no-show twice — freeing its seat twice, i.e. someone else's —
+    // or revive a cancelled booking without re-reserving its seat.
+    if (!(ALLOWED_STATUS_CHANGES[booking.status] || []).includes(status)) {
+      return res.status(400).json({ success:false, message:`Can't change a ${booking.status.replace("_", " ")} booking to ${String(status).replace("_", " ")}.` });
+    }
+    // Conditional on the status just read, so a double tap can't apply twice.
+    const claimed = await Booking.findOneAndUpdate(
+      { _id: booking._id, status: booking.status },
+      { status, ...(status === "completed" ? { paymentStatus: "paid" } : {}) }
+    );
+    if (!claimed) return res.status(409).json({ success:false, message:"This booking was just updated. Please refresh." });
     booking.status = status;
-    if (status === "completed") booking.paymentStatus = "paid";
-    await booking.save();
 
     // A no-show frees up the pooled-capacity slot it was occupying,
     // same reasoning as cancellation — the customer never showed, so
@@ -803,10 +837,17 @@ exports.verifyOtp = async (req, res) => {
       return res.status(403).json({ success: false, message: "Not authorized" });
     }
     if (booking.otpVerified) return res.status(400).json({ success:false, message:"OTP already verified" });
+    // A cancelled/no-show booking has already given its seat back —
+    // starting it would put an unreserved customer in a slot.
+    if (booking.status !== "confirmed") return res.status(400).json({ success:false, message:`This booking is ${booking.status.replace("_", " ")} and can't be started.` });
     if (booking.otp !== otp) return res.status(400).json({ success:false, message:"Invalid OTP. Ask customer to check their app." });
+    const claimed = await Booking.findOneAndUpdate(
+      { _id: booking._id, status: "confirmed", otpVerified: { $ne: true } },
+      { status: "in_progress", otpVerified: true }
+    );
+    if (!claimed) return res.status(409).json({ success:false, message:"This booking was just updated. Please refresh." });
     booking.status      = "in_progress";
     booking.otpVerified = true;
-    await booking.save();
 
     emitToRoom(`store:${booking.store._id}:${booking.date}`, "queue:update", { reason:"otp_verified", bookingId: booking._id });
     emitToRoom(`user:${booking.customer}`, "booking:status", { bookingId: booking._id, status:"in_progress", storeName: booking.store?.name });
@@ -894,9 +935,16 @@ exports.cancelBooking = async (req, res) => {
     // rather than relying solely on the UI hiding the option, since the
     // API itself should never allow cancelling a visit that's already
     // underway, regardless of how the request was made.
-    if (["completed","cancelled","in_progress"].includes(booking.status)) {
-      return res.status(400).json({ success:false, message: booking.status === "in_progress" ? "Can't cancel — your service has already started." : `Cannot cancel a ${booking.status} booking` });
+    // no_show included: its seat was already released when it was marked,
+    // so cancelling it afterwards released a second seat (someone else's).
+    if (["completed","cancelled","in_progress","no_show"].includes(booking.status)) {
+      return res.status(400).json({ success:false, message: booking.status === "in_progress" ? "Can't cancel — your service has already started." : `Cannot cancel a ${booking.status.replace("_", " ")} booking` });
     }
+    // Claim the cancellation atomically before refunding or releasing
+    // seats — two quick taps both passed the check above and refunded
+    // the UPI amount to the wallet twice.
+    const claimed = await Booking.findOneAndUpdate({ _id: booking._id, status: booking.status }, { status: "cancelled" });
+    if (!claimed) return res.status(409).json({ success:false, message:"This booking was just updated. Please refresh." });
     booking.status = "cancelled";
     booking.cancelReason = req.body.reason||"Cancelled by customer";
 
@@ -1118,7 +1166,7 @@ exports.rescheduleBooking = async (req, res) => {
     const { date: newDate, timeSlot: newTimeSlot } = req.body;
     if (!newDate || !newTimeSlot) return res.status(400).json({ success:false, message:"New date and time slot are required" });
 
-    const booking = await Booking.findOne({ _id: req.params.id, customer: req.user.id }).populate("store", "name owner slotCapacity slotDuration");
+    const booking = await Booking.findOne({ _id: req.params.id, customer: req.user.id }).populate("store", "name owner slotCapacity slotDuration workingHours breakTimes blockedSlots maxAdvanceBooking");
     if (!booking) return res.status(404).json({ success:false, message:"Booking not found" });
     if (booking.status !== "confirmed") return res.status(400).json({ success:false, message:`Cannot reschedule a ${booking.status} booking` });
     if (booking.date === newDate && booking.timeSlot === newTimeSlot) {
@@ -1127,6 +1175,8 @@ exports.rescheduleBooking = async (req, res) => {
 
     const oldDate = booking.date, oldTimeSlot = booking.timeSlot;
     const store = booking.store;
+    const ruleError = bookingRuleError(store, newDate, newTimeSlot, booking.service?.duration || store.slotDuration || 30);
+    if (ruleError) return res.status(400).json({ success:false, message: ruleError });
 
     const session = await mongoose.startSession();
     try {

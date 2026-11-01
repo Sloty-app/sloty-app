@@ -13,7 +13,7 @@ const OwnerMessages     = lazy(() => import("../../components/OwnerMessages"));
 const OwnerAnalytics    = lazy(() => import("../../components/OwnerAnalytics"));
 const OwnerBlockedDates = lazy(() => import("../../components/OwnerBlockedDates"));
 const OwnerBreakTimes   = lazy(() => import("../../components/OwnerBreakTimes"));
-import { getISTDateString, getISTNow, getNext7Days } from "../../utils/date";
+import { getISTDateString, getNext7Days, getISTDateNum } from "../../utils/date";
 import { getSocket, joinRoom, leaveRoom } from "../../utils/socket";
 import { playChime } from "../../utils/sound";
 import { enablePushNotifications } from "../../utils/push";
@@ -897,9 +897,7 @@ export default function OwnerApp() {
     setHistLoading(true);
     try {
       const to   = getISTDateString();
-      const fromDate = getISTNow();
-      fromDate.setUTCDate(fromDate.getUTCDate() - 30);
-      const from = getISTDateString(fromDate);
+      const from = getISTDateString(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
       const res  = await api("GET", `/bookings/store/${store._id}?from=${from}&to=${to}`);
       setHistory(res.bookings||[]);
     } catch(e) { console.error(e); } finally { setHistLoading(false); }
@@ -1650,8 +1648,8 @@ export default function OwnerApp() {
                 const isToday = dateStr === today;
                 return (
                   <button key={dateStr} onClick={() => setGridDate(dateStr)} style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"10px 14px", borderRadius:14, border:`2px solid ${isSelected?C.pri:"#E8ECF5"}`, background:isSelected?C.pri:"#fff", cursor:"pointer", fontFamily:"'Nunito',sans-serif", minWidth:56 }}>
-                    <span style={{ fontSize:10, fontWeight:800, color:isSelected?"#fff":C.muted }}>{isToday ? "TODAY" : d.toLocaleDateString("en-IN",{weekday:"short"}).toUpperCase()}</span>
-                    <span style={{ fontSize:15, fontWeight:900, color:isSelected?"#fff":C.text }}>{d.getDate()}</span>
+                    <span style={{ fontSize:10, fontWeight:800, color:isSelected?"#fff":C.muted }}>{isToday ? "TODAY" : d.toLocaleDateString("en-IN",{weekday:"short", timeZone:"Asia/Kolkata"}).toUpperCase()}</span>
+                    <span style={{ fontSize:15, fontWeight:900, color:isSelected?"#fff":C.text }}>{getISTDateNum(d)}</span>
                   </button>
                 );
               })}
