@@ -32,9 +32,9 @@ const BookingSchema = new mongoose.Schema({
 
   date:     { type: String, required: true }, // "2026-05-01"
   timeSlot: { type: String, required: true }, // "10:30 AM"
-  // Every grid slot this booking holds a SlotCapacity seat in (start slot
+  // Every 5-min SlotCapacity piece this booking holds a seat in (start
   // through the end of its total service duration) — so cancel/reschedule
-  // free exactly what was taken, even if the store's grid changes later.
+  // free exactly what was taken.
   reservedSlots: { type: [String], default: undefined },
 
   tokenNumber:   { type: String, default: "" },

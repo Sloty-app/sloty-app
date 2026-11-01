@@ -1530,7 +1530,6 @@ export default function CustomerApp() {
             slots={rescheduleSlots}
             selected={rescheduleSlot}
             onSelect={setRescheduleSlot}
-            duration={rescheduleModal?.service?.duration}
             loading={rescheduleSlotsLoading}
             isWholeDayClosed={rescheduleDayClosure.isWholeDayClosed}
             closureReason={rescheduleDayClosure.closureReason}
@@ -2546,7 +2545,6 @@ export default function CustomerApp() {
                 slots={slots}
                 selected={selSlot}
                 onSelect={setSelSlot}
-                duration={totalServiceDuration}
                 loading={slotsLoading}
                 isWholeDayClosed={dayClosure.isWholeDayClosed}
                 closureReason={dayClosure.closureReason}
@@ -2623,7 +2621,7 @@ export default function CustomerApp() {
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, padding:"0 4px" }}>
                 <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                   <Wrench size={13} color={C.muted} />
-                  <span style={{ fontSize:13, color:C.muted, fontWeight:700 }}>{selServices.map(s=>s.name).join(" + ")}{selStaff?` · ${selStaff.name}`:""} · {selSlot}</span>
+                  <span style={{ fontSize:13, color:C.muted, fontWeight:700 }}>{selServices.map(s=>s.name).join(" + ")}{selStaff?` · ${selStaff.name}`:""} · {selSlot}{slots.find(s=>s.time===selSlot)?.endTime ? ` – ${slots.find(s=>s.time===selSlot).endTime}` : ""}</span>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:4 }}>
                   {(offerDiscountPreview>0 || walletDiscount>0) && <span style={{ fontSize:12, color:C.muted, textDecoration:"line-through" }}>₹{totalServicePrice}</span>}

@@ -37,15 +37,20 @@ const toLabel = (mins) => {
   return `${dh}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
 };
 
-// Every grid slot a booking actually occupies. A 120-min booking at
-// 10:00 on a 30-min grid holds 10:00, 10:30, 11:00 and 11:30 — reserving
-// only the starting slot (as before) let someone else book 10:30 on top
-// of a combo that was still in progress.
-SlotCapacitySchema.statics.coveredSlots = (startSlot, duration, step) => {
+// Seats are counted per 5-minute piece of the day (the step owners enter
+// service durations in). Customer slots are blocks as long as the chosen
+// services, so starts land on times like 10:50 or 11:40 — fine-grained
+// pieces make any two bookings that truly overlap compete for the same
+// counter, whatever their lengths. Reserving only the starting slot (as
+// originally) let someone book 10:30 on top of a 10:00 combo still running.
+const BUCKET_MINUTES = 5;
+
+// Every piece a booking occupies, e.g. 50 mins at 10:00 -> 10:00, 10:05 ... 10:45.
+SlotCapacitySchema.statics.coveredSlots = (startSlot, duration) => {
   const start = toMinutes(startSlot);
-  const end = start + Math.max(duration || step, 1);
+  const end = start + Math.max(duration || BUCKET_MINUTES, 1);
   const slots = [];
-  for (let t = start; t < end; t += step) slots.push(toLabel(t));
+  for (let t = start - (start % BUCKET_MINUTES); t < end; t += BUCKET_MINUTES) slots.push(toLabel(t));
   return slots;
 };
 

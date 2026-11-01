@@ -27,6 +27,32 @@ const timeToMinutes = (t) => {
   return h * 60 + m;
 };
 
+// Minutes-since-midnight back to the "9:00 AM" / "2:30 PM" slot format.
+const minutesToTime = (mins) => {
+  const h = Math.floor(mins / 60), m = mins % 60;
+  const dh = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return `${dh}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+};
+
+// Customer-facing slots: back-to-back blocks exactly as long as the
+// selected services, starting at opening time — 50 mins of services at a
+// store opening 10:00 gives 10:00, 10:50, 11:40... A block that would run
+// into a break is dropped and the next one starts when the break ends.
+const generateServiceBlocks = (open, close, duration, breakRanges) => {
+  const slots = [];
+  const [oh, om] = open.split(":").map(Number);
+  let t = oh * 60 + om;
+  const [ch, cm] = close.split(":").map(Number);
+  const closeTotal = ch * 60 + cm;
+  while (t + duration <= closeTotal) {
+    const brk = breakRanges.find(r => t < r.end && t + duration > r.start);
+    if (brk) { t = brk.end; continue; }
+    slots.push(minutesToTime(t));
+    t += duration;
+  }
+  return slots;
+};
+
 // Named-staff mode: does [startMin, startMin+duration) overlap any of
 // this person's other active bookings that day? Compared by real time
 // ranges, not by identical start strings — a 10:30 booking clashes with
@@ -71,14 +97,21 @@ exports.getAvailableSlots = async (req, res) => {
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
 
     const stepInterval = store.slotDuration || 30;
-    const duration = parseInt(req.query.duration) || stepInterval;
-    const allSlots = generateSlots(store.workingHours.open, store.workingHours.close, stepInterval, duration);
+    const requestedDuration = parseInt(req.query.duration);
+    const duration = requestedDuration || stepInterval;
 
     const breakRanges = (store.breakTimes || []).map(b => {
       const [bh, bm] = b.open.split(":").map(Number);
       const [ch, cm] = b.close.split(":").map(Number);
       return { start: bh*60+bm, end: ch*60+cm, label: b.label||"Break" };
     });
+
+    // With a service duration (customer booking/reschedule), slots are
+    // blocks of exactly that length. Without one (owner's blocked-dates
+    // view), keep the store's regular grid so owners still see breaks.
+    const allSlots = requestedDuration
+      ? generateServiceBlocks(store.workingHours.open, store.workingHours.close, duration, breakRanges)
+      : generateSlots(store.workingHours.open, store.workingHours.close, stepInterval, duration);
 
     const blockedEntry = (store.blockedSlots || []).find(b => b.date === date);
     // An entry with no specific slots listed means the WHOLE day is
@@ -88,6 +121,9 @@ exports.getAvailableSlots = async (req, res) => {
     // blocks only those (e.g. owner stepping out 2-4pm).
     const isWholeDayClosed = !!blockedEntry && (!blockedEntry.slots || blockedEntry.slots.length === 0);
     const blockedSet = new Set(isWholeDayClosed ? allSlots : (blockedEntry?.slots || []));
+    // Owners block slots on the regular grid (e.g. "2:00 PM" = 2:00-2:30);
+    // service blocks rarely line up with those, so check by time overlap.
+    const blockedRanges = [...blockedSet].map(s => ({ start: timeToMinutes(s), end: timeToMinutes(s) + stepInterval }));
 
     const bookedFilter = { store:req.params.storeId, date, status:{ $in:["confirmed","in_progress"] } };
     bookedFilter.staffId = (store.hasStaff && staffId) ? staffId : null;
@@ -133,11 +169,12 @@ exports.getAvailableSlots = async (req, res) => {
       const overlappingCount = bookedRanges.filter(r => slotTotal < r.end && slotEnd > r.start).length;
       const isBreak  = breakRanges.some(r => slotTotal < r.end && slotEnd > r.start);
       const breakLabel = breakRanges.find(r => slotTotal < r.end && slotEnd > r.start)?.label || "Break";
-      const isBlocked = blockedSet.has(time);
+      const isBlocked = blockedRanges.some(r => slotTotal < r.end && slotEnd > r.start);
       const isFull = overlappingCount >= capacity;
 
       return {
         time,
+        endTime: minutesToTime(slotEnd),
         available: !isFull && !isPast && !isBreak && !isBlocked,
         isPast, isBooked: isFull, isBreak, isBlocked, breakLabel,
         spotsLeft: usingPooledCapacity ? Math.max(0, capacity - overlappingCount) : undefined,
@@ -270,7 +307,7 @@ exports.createBooking = async (req, res) => {
       const slotTaken = await staffHasClash(storeId, date, resolvedStaffId, slotStartMinutes, totalDuration);
       if (slotTaken) return res.status(400).json({ success:false, message:`${staffName} isn't free for the full ${totalDuration} mins from ${timeSlot}. Please choose another time.` });
     }
-    const reservedSlots = SlotCapacity.coveredSlots(timeSlot, totalDuration, store.slotDuration || 30);
+    const reservedSlots = SlotCapacity.coveredSlots(timeSlot, totalDuration);
 
     const todayCount  = await Booking.countDocuments({ store:storeId, date, staffId: resolvedStaffId, status:{ $in:["confirmed","in_progress","completed"] } });
     const tokenNumber = Booking.generateToken(todayCount);
@@ -1110,7 +1147,7 @@ exports.rescheduleBooking = async (req, res) => {
         // overlap (10:00 -> 10:30 for 60 mins) so the booking doesn't
         // collide with its own seat; the transaction undoes the release
         // if the new span turns out to be unavailable.
-        newReserved = SlotCapacity.coveredSlots(newTimeSlot, duration, store.slotDuration || 30);
+        newReserved = SlotCapacity.coveredSlots(newTimeSlot, duration);
         await SlotCapacity.releaseFor(booking, session);
         await SlotCapacity.reserve(store._id, newDate, newReserved, store.slotCapacity, session);
       }
