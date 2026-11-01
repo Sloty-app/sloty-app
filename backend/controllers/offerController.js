@@ -4,6 +4,7 @@ const Store = require("../models/Store");
 const User  = require("../models/User");
 const sendNotification = require("../config/notify");
 const { istDateStringToUtcStart, istDateStringToUtcEnd } = require("../utils/date");
+const { escapeRegex } = require("../utils/regex");
 
 // POST /api/offers  (owner) — creates an offer and notifies every
 // customer in the store's city about it. Notification fan-out happens
@@ -57,7 +58,7 @@ exports.createOffer = async (req, res) => {
     // skips anyone who's turned off Offers & Promotions in Settings.
     (async () => {
       try {
-        const customers = await User.find({ role: "customer", city: new RegExp(`^${store.city}$`, "i") }).select("_id");
+        const customers = await User.find({ role: "customer", city: new RegExp(`^${escapeRegex(store.city)}$`, "i") }).select("_id");
         const discountLabel = discountType === "free" ? "FREE" : discountType === "percentage" ? `${discountValue}% off` : `₹${discountValue} off`;
         await Promise.allSettled(
           customers.map(c => sendNotification(

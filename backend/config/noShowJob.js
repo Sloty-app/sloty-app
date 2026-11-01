@@ -37,6 +37,33 @@ function isSlotExpired(dateStr, timeSlot) {
   }
 }
 
+// Counts one no-show against the customer, warning them and restricting
+// booking at the thresholds. Shared by this job and the owner's manual
+// "Mark No Show" (which previously didn't count at all).
+exports.applyNoShowPenalty = async (customerId) => {
+  const customer = await User.findByIdAndUpdate(customerId, { $inc: { noShowCount: 1 } }, { new: true });
+  if (!customer) return false;
+
+  if (customer.noShowCount >= RESTRICTION_THRESHOLD) {
+    // A real instant: compared against new Date() at booking time, so
+    // an IST-shifted base would stretch the ban by an extra 5.5 hours.
+    const restrictedUntil = new Date(Date.now() + RESTRICTION_DAYS * 24 * 60 * 60 * 1000);
+    await User.findByIdAndUpdate(customerId, { bookingRestrictedUntil: restrictedUntil });
+    sendNotification(
+      customerId,
+      "⛔ Booking access restricted",
+      `You've had ${customer.noShowCount} no-shows. Booking is restricted for ${RESTRICTION_DAYS} days. Please be mindful of your bookings.`
+    ).catch(() => {});
+  } else if (customer.noShowCount >= WARNING_THRESHOLD) {
+    sendNotification(
+      customerId,
+      "⚠️ No-show warning",
+      `You've missed ${customer.noShowCount} bookings without cancelling. After ${RESTRICTION_THRESHOLD} no-shows, you'll be restricted from booking for ${RESTRICTION_DAYS} days.`
+    ).catch(() => {});
+  }
+  return true;
+};
+
 exports.runNoShowCheck = async () => {
   try {
     // Every still-confirmed booking dated today or earlier — not just
@@ -60,36 +87,7 @@ exports.runNoShowCheck = async () => {
       const marked = await Booking.findOneAndUpdate({ _id: booking._id, status: "confirmed" }, { status: "no_show" });
       if (!marked) continue;
 
-      // Increment customer's no-show counter
-      const customer = await User.findByIdAndUpdate(
-        booking.customer,
-        { $inc: { noShowCount: 1 } },
-        { new: true }
-      );
-
-      if (!customer) continue;
-      noShowCount++;
-
-      // Notify and enforce based on threshold
-      if (customer.noShowCount >= RESTRICTION_THRESHOLD) {
-        // A real instant: compared against new Date() at booking time, so
-        // an IST-shifted base would stretch the ban by an extra 5.5 hours.
-        const restrictedUntil = new Date(Date.now() + RESTRICTION_DAYS * 24 * 60 * 60 * 1000);
-        await User.findByIdAndUpdate(booking.customer, {
-          bookingRestrictedUntil: restrictedUntil,
-        });
-        sendNotification(
-          booking.customer,
-          "⛔ Booking access restricted",
-          `You've had ${customer.noShowCount} no-shows. Booking is restricted for ${RESTRICTION_DAYS} days. Please be mindful of your bookings.`
-        ).catch(() => {});
-      } else if (customer.noShowCount >= WARNING_THRESHOLD) {
-        sendNotification(
-          booking.customer,
-          "⚠️ No-show warning",
-          `You've missed ${customer.noShowCount} bookings without cancelling. After ${RESTRICTION_THRESHOLD} no-shows, you'll be restricted from booking for ${RESTRICTION_DAYS} days.`
-        ).catch(() => {});
-      }
+      if (await exports.applyNoShowPenalty(booking.customer)) noShowCount++;
     }
 
     if (noShowCount > 0) {

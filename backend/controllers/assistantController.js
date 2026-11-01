@@ -11,6 +11,7 @@
 const { GoogleGenAI } = require("@google/genai");
 const Store  = require("../models/Store");
 const { getISTDateString } = require("../utils/date");
+const { escapeRegex } = require("../utils/regex");
 const bookingController = require("./bookingController");
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -19,7 +20,10 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 // assistant that makes several calls per conversation turn.
 const MODEL = "gemini-2.5-flash-lite";
 
-const SYSTEM_PROMPT = `You are Sloty's booking assistant. You help users find a local service business (salon, mechanic, doctor, dentist, etc.) and book a slot — entirely through conversation, end to end.
+// Built per request: as a constant, "today" was frozen at server start,
+// so after a day of uptime the assistant resolved "tomorrow" to the
+// wrong date and booked it.
+const systemPrompt = () => `You are Sloty's booking assistant. You help users find a local service business (salon, mechanic, doctor, dentist, etc.) and book a slot — entirely through conversation, end to end.
 
 Today's date (IST) is ${getISTDateString()}.
 
@@ -118,10 +122,10 @@ async function runTool(name, input, req) {
         // area-level search term would never match a single store,
         // even when real, relevant stores genuinely existed there.
         if (input.city) {
-          const cityRegex = new RegExp(input.city, "i");
+          const cityRegex = new RegExp(escapeRegex(input.city), "i");
           filter.$or = [{ city: cityRegex }, { area: cityRegex }];
         }
-        if (input.search)   filter.name = new RegExp(input.search, "i");
+        if (input.search)   filter.name = new RegExp(escapeRegex(input.search), "i");
         const stores = await Store.find(filter).select("name category city area rating totalReviews isOpen services").limit(6).lean();
         return { stores: stores.map(s => ({
           storeId: s._id.toString(), name: s.name, category: s.category, city: s.city, area: s.area,
@@ -160,6 +164,9 @@ async function runTool(name, input, req) {
         });
       }
       case "create_booking": {
+        // Same rule as POST /api/bookings (customers only) — calling the
+        // controller directly skipped that route's role check.
+        if (req.user.role !== "customer") return { error: "Only customer accounts can make bookings." };
         if (!input.storeId || !/^[0-9a-fA-F]{24}$/.test(input.storeId)) {
           return { error: "That storeId looks invalid — confirm it with get_store_details before booking." };
         }
@@ -259,7 +266,7 @@ exports.chat = async (req, res) => {
         model: MODEL,
         contents: conversation,
         config: {
-          systemInstruction: SYSTEM_PROMPT,
+          systemInstruction: systemPrompt(),
           tools: [{ functionDeclarations: TOOLS }],
           maxOutputTokens: 1024,
         },

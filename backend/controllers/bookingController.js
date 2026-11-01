@@ -246,7 +246,7 @@ exports.createBooking = async (req, res) => {
     let { useWallet, offerId } = req.body;
     const store = await Store.findById(storeId);
     if (!store)            return res.status(404).json({ success:false, message:"Store not found" });
-    if (!store.isApproved) return res.status(400).json({ success:false, message:"Store is not available" });
+    if (!store.isApproved || store.isActive === false) return res.status(400).json({ success:false, message:"Store is not available" }); // isActive:false = removed by admin
     if (!store.isOpen)     return res.status(400).json({ success:false, message:"Store is currently closed" });
 
     // Check if this customer has an active no-show restriction
@@ -637,7 +637,9 @@ exports.getLiveQueue = async (req, res) => {
     const filter = { store:req.params.storeId, date:today, status:{ $in:["confirmed","in_progress"] } };
     if (staffId) filter.staffId = staffId;
     const bookings = await Booking.find(filter)
-      .select("tokenNumber timeSlot status customerName queuePosition staffId staffName").sort({ queuePosition:1 });
+      // No customerName — any logged-in user can read a store's queue, and
+      // other customers' names aren't theirs to see (tokens are enough).
+      .select("tokenNumber timeSlot status queuePosition staffId staffName").sort({ queuePosition:1 });
     // Re-sort by actual appointment time, not booking-creation order —
     // queuePosition only reflects the order slots were BOOKED in, so a
     // customer who booked a 1:00 PM slot after someone else already had
@@ -692,6 +694,9 @@ exports.updateStatus = async (req, res) => {
     if (status === "no_show" && !booking.staffId) {
       await SlotCapacity.releaseFor(booking);
     }
+    // Counts toward the customer's no-show total exactly like the
+    // automatic job does — marking it by hand used to cost them nothing.
+    if (status === "no_show") await require("../config/noShowJob").applyNoShowPenalty(booking.customer);
 
     // Real-time: push the change to the owner's queue view + the specific
     // customer instantly (replaces the old 20s polling for this).
@@ -1185,7 +1190,7 @@ exports.rescheduleBooking = async (req, res) => {
     const { date: newDate, timeSlot: newTimeSlot } = req.body;
     if (!newDate || !newTimeSlot) return res.status(400).json({ success:false, message:"New date and time slot are required" });
 
-    const booking = await Booking.findOne({ _id: req.params.id, customer: req.user.id }).populate("store", "name owner slotCapacity slotDuration workingHours breakTimes blockedSlots maxAdvanceBooking");
+    const booking = await Booking.findOne({ _id: req.params.id, customer: req.user.id }).populate("store", "name owner slotCapacity slotDuration workingHours breakTimes blockedSlots maxAdvanceBooking isApproved isActive");
     if (!booking) return res.status(404).json({ success:false, message:"Booking not found" });
     if (booking.status !== "confirmed") return res.status(400).json({ success:false, message:`Cannot reschedule a ${booking.status} booking` });
     if (booking.date === newDate && booking.timeSlot === newTimeSlot) {
@@ -1194,6 +1199,7 @@ exports.rescheduleBooking = async (req, res) => {
 
     const oldDate = booking.date, oldTimeSlot = booking.timeSlot;
     const store = booking.store;
+    if (!store.isApproved || store.isActive === false) return res.status(400).json({ success:false, message:"This store is no longer taking bookings." });
     const ruleError = bookingRuleError(store, newDate, newTimeSlot, booking.service?.duration || store.slotDuration || 30);
     if (ruleError) return res.status(400).json({ success:false, message: ruleError });
 

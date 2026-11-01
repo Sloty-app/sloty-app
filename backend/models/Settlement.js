@@ -14,5 +14,9 @@ const SettlementSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 SettlementSchema.index({ store: 1, status: 1 });
+// At most one open request per store, enforced by the database — the
+// controller's "already pending?" check alone let three quick taps
+// create three requests for the same money.
+SettlementSchema.index({ store: 1 }, { unique: true, name: "one_open_request_per_store", partialFilterExpression: { status: "requested" } });
 
 module.exports = mongoose.model("Settlement", SettlementSchema);

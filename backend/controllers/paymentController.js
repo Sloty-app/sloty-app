@@ -73,6 +73,14 @@ exports.createOrder = async (req, res) => {
     const amountInPaise = Math.round((booking.service.price - (booking.walletDeducted || 0)) * 100);
     if (amountInPaise <= 0) return res.status(400).json({ success:false, message:"Nothing left to pay on this booking" });
 
+    // In production, missing Razorpay keys must not fall back to the
+    // simulated flow below — that marks any UPI booking as paid (and
+    // credits the store) without money ever moving.
+    if (!hasRealCredentials && process.env.NODE_ENV === "production") {
+      console.error("RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET missing in production — online payments are disabled.");
+      return res.status(503).json({ success:false, message:"Online payment isn't available right now. Please choose Pay at Store." });
+    }
+
     if (!hasRealCredentials) {
       // DEV MODE — no real Razorpay account connected yet. Return a
       // fake order so the frontend can still exercise the full flow;
@@ -126,6 +134,9 @@ exports.verifyPayment = async (req, res) => {
       return res.status(400).json({ success:false, message:"Order mismatch — payment does not match this booking" });
     }
 
+    if (!hasRealCredentials && process.env.NODE_ENV === "production") {
+      return res.status(503).json({ success:false, message:"Online payment isn't available right now." });
+    }
     if (!hasRealCredentials) {
       // DEV MODE — trust it, since this is only reachable with a
       // dev_order_ id that createOrder itself generated above; there's

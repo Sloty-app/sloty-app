@@ -5,6 +5,13 @@ const User  = require("../models/User");
 const { sendEmail, emailTemplates } = require("../config/mailer");
 const Booking = require("../models/Booking");
 const { getISTDateString } = require("../utils/date");
+const { escapeRegex } = require("../utils/regex");
+
+// Public store responses leave out reviews (paged separately) and
+// internal/admin fields — the store's pending payout balance, approval
+// audit fields and the owner's personal phone (customers use the
+// store's own phone) were all readable by anyone.
+const PUBLIC_STORE_FIELDS = "-reviews -pendingUpiBalance -approvedBy -approvedAt -rejectedReason -removedBy -removedAt -ratingSum";
 
 // GET /api/stores — Public: Only APPROVED stores visible to customers
 exports.getStores = async (req, res) => {
@@ -12,8 +19,8 @@ exports.getStores = async (req, res) => {
     const { category, city, search, rating, lat, lng } = req.query;
     const filter = { isApproved:true, isActive:true };
     if (category) filter.category = category;
-    if (city)     filter.city = new RegExp(city, "i");
-    if (search)   filter.name = new RegExp(search, "i");
+    if (city)     filter.city = new RegExp(escapeRegex(city), "i");
+    if (search)   filter.name = new RegExp(escapeRegex(search), "i");
     if (rating)   filter.rating = { $gte: Number(rating) };
 
     // Excludes reviews — this is the Home/Explore list, loaded far more
@@ -22,7 +29,7 @@ exports.getStores = async (req, res) => {
     // Without this, every store's full (and ever-growing) reviews array
     // shipped on every list load regardless of whether anyone opens a
     // store's Reviews tab.
-    let stores = await Store.find(filter).select("-reviews").populate("owner","name phone").sort({ rating:-1 }).lean();
+    let stores = await Store.find(filter).select(PUBLIC_STORE_FIELDS).populate("owner","name").sort({ rating:-1 }).lean();
 
     // Nearest-first: only kicks in when the customer's location is passed.
     // Stores without a saved location are pushed to the end, not dropped.
@@ -69,7 +76,7 @@ exports.getStores = async (req, res) => {
 // the Services tab (the page customers land on first).
 exports.getStore = async (req, res) => {
   try {
-    const store = await Store.findOne({ _id:req.params.id, isApproved:true }).select("-reviews").populate("owner","name phone");
+    const store = await Store.findOne({ _id:req.params.id, isApproved:true, isActive:true }).select(PUBLIC_STORE_FIELDS).populate("owner","name");
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
     res.status(200).json({ success:true, store });
   } catch (err) {
@@ -160,8 +167,11 @@ exports.createStore = async (req, res) => {
       return res.status(400).json({ success:false, message:"Please enter your real email address, not an auto-generated one" });
     }
 
-    const exists = await Store.findOne({ owner:req.user.id, name:req.body.name });
-    if (exists) return res.status(400).json({ success:false, message:"You already have a store with this name" });
+    // One store per owner account: every owner screen, payout, offer and
+    // blocked-date lookup works on "the owner's store" (findOne by owner),
+    // so a second store was invisible and unmanageable.
+    const exists = await Store.exists({ owner:req.user.id });
+    if (exists) return res.status(400).json({ success:false, message:"You already have a store registered on this account" });
 
     // Only whitelisted fields make it onto the document — status/audit
     // fields like isApproved, pendingUpiBalance, and owner are always
@@ -326,9 +336,19 @@ exports.toggleOpen = async (req, res) => {
 // POST /api/stores/:id/reviews — Customer adds review
 exports.addReview = async (req, res) => {
   try {
-    const { rating, comment } = req.body;
+    // A whole number 1-5. A string rating used to be concatenated into the
+    // running sum ("4" then "5" pushed a store's average to 477.2).
+    const rating = Number(req.body.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ success:false, message:"Please choose a rating from 1 to 5 stars" });
+    }
+    const comment = String(req.body.comment || "").trim().slice(0, 500);
     const store = await Store.findById(req.params.id);
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
+    // Only customers who actually visited — matching the app, which only
+    // offers "Rate your experience" on a completed booking.
+    const visited = await Booking.exists({ store: store._id, customer: req.user.id, status: "completed" });
+    if (!visited) return res.status(403).json({ success:false, message:"You can review this store after a completed visit." });
     const alreadyReviewed = store.reviews.find(r=>r.user.toString()===req.user.id);
     if (alreadyReviewed) return res.status(400).json({ success:false, message:"You already reviewed this store" });
     store.reviews.push({ user:req.user.id, name:req.user.name, rating, comment });

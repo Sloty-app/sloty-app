@@ -231,4 +231,18 @@ const emailTemplates = {
   }),
 };
 
-module.exports = { sendEmail, emailTemplates };
+// Every template interpolates user-supplied text (customer names, store
+// names, services) straight into HTML — a customer named
+// `<a href="...">Click here</a>` put a working link inside an official
+// Sloty email. The body is built from HTML-escaped values; the subject
+// is plain text, so it keeps the raw values (escaping would show "&amp;")
+// with line breaks removed so a name can't add extra mail headers.
+const escapeHtml = (v) => typeof v === "string"
+  ? v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]))
+  : v;
+const safeTemplates = Object.fromEntries(Object.entries(emailTemplates).map(([key, build]) => [
+  key,
+  (...args) => ({ ...build(...args.map(escapeHtml)), subject: String(build(...args).subject).replace(/[\r\n]+/g, " ") }),
+]));
+
+module.exports = { sendEmail, emailTemplates: safeTemplates };

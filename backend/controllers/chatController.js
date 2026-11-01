@@ -4,6 +4,20 @@ const Store         = require("../models/Store");
 const sendNotification = require("../config/notify");
 const { emitToRoom } = require("../config/socket");
 
+// Request bodies may be up to 12 MB (for photo uploads elsewhere), so
+// without limits one message — or an endless stream of them — could
+// grow a conversation toward MongoDB's 16 MB document cap and break it.
+const MAX_MESSAGE_LENGTH = 1000;
+const MAX_MESSAGES_KEPT  = 500;
+const messageError = (text) =>
+  typeof text !== "string" || !text.trim() ? "Message can't be empty"
+  : text.trim().length > MAX_MESSAGE_LENGTH ? `Messages can be up to ${MAX_MESSAGE_LENGTH} characters`
+  : null;
+const pushMessage = (convo, senderRole, text) => {
+  convo.messages.push({ senderRole, text: text.trim() });
+  if (convo.messages.length > MAX_MESSAGES_KEPT) convo.messages.splice(0, convo.messages.length - MAX_MESSAGES_KEPT);
+};
+
 // ── Customer side ────────────────────────────────────────────────────────
 
 // GET /api/chat/:storeId — fetch (or lazily create) the conversation with
@@ -36,7 +50,8 @@ exports.sendCustomerMessage = async (req, res) => {
   try {
     const { storeId } = req.params;
     const { text } = req.body;
-    if (!text?.trim()) return res.status(400).json({ success:false, message:"Message can't be empty" });
+    const invalid = messageError(text);
+    if (invalid) return res.status(400).json({ success:false, message: invalid });
 
     const store = await Store.findById(storeId).select("name owner");
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
@@ -50,7 +65,7 @@ exports.sendCustomerMessage = async (req, res) => {
       });
     }
 
-    convo.messages.push({ senderRole: "customer", text: text.trim() });
+    pushMessage(convo, "customer", text);
     convo.lastMessageAt = new Date();
     convo.lastMessageText = text.trim();
     convo.ownerUnread += 1;
@@ -101,13 +116,14 @@ exports.getOwnerConversation = async (req, res) => {
 exports.sendOwnerMessage = async (req, res) => {
   try {
     const { text } = req.body;
-    if (!text?.trim()) return res.status(400).json({ success:false, message:"Message can't be empty" });
+    const invalid = messageError(text);
+    if (invalid) return res.status(400).json({ success:false, message: invalid });
 
     const convo = await Conversation.findById(req.params.conversationId).populate("store", "owner name");
     if (!convo) return res.status(404).json({ success:false, message:"Conversation not found" });
     if (convo.store.owner.toString() !== req.user.id) return res.status(403).json({ success:false, message:"Not authorized" });
 
-    convo.messages.push({ senderRole: "owner", text: text.trim() });
+    pushMessage(convo, "owner", text);
     convo.lastMessageAt = new Date();
     convo.lastMessageText = text.trim();
     convo.customerUnread += 1;

@@ -46,6 +46,7 @@ exports.requestSettlement = async (req, res) => {
     const settlement = await Settlement.create({ store: store._id, amount, status:"requested" });
     res.status(201).json({ success:true, message:"Settlement requested", settlement });
   } catch (err) {
+    if (err.code === 11000) return res.status(400).json({ success:false, message:"You already have a pending settlement request" });
     console.error("requestSettlement error:", err.message);
     res.status(500).json({ success:false, message:"Server error" });
   }
@@ -70,16 +71,18 @@ exports.getPendingSettlements = async (req, res) => {
 exports.completeSettlement = async (req, res) => {
   try {
     const { note } = req.body;
-    const settlement = await Settlement.findById(req.params.id);
-    if (!settlement) return res.status(404).json({ success:false, message:"Settlement not found" });
-    if (settlement.status === "completed") {
-      return res.status(400).json({ success:false, message:"Already marked completed" });
+    // Claimed atomically so a double tap can't deduct the payout twice.
+    const settlement = await Settlement.findOneAndUpdate(
+      { _id: req.params.id, status: "requested" },
+      { status: "completed", completedAt: new Date(), ...(note ? { note } : {}) },
+      { new: true }
+    );
+    if (!settlement) {
+      const exists = await Settlement.exists({ _id: req.params.id });
+      return exists
+        ? res.status(400).json({ success:false, message:"Already marked completed" })
+        : res.status(404).json({ success:false, message:"Settlement not found" });
     }
-
-    settlement.status = "completed";
-    settlement.completedAt = new Date();
-    if (note) settlement.note = note;
-    await settlement.save();
 
     await Store.findByIdAndUpdate(settlement.store, { $inc: { pendingUpiBalance: -settlement.amount } });
 

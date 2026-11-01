@@ -384,6 +384,23 @@ exports.deleteAccount = async (req, res) => {
     const Conversation = require("../models/Conversation");
 
     const userId = req.user.id;
+    const Store = require("../models/Store");
+    const SlotCapacity = require("../models/SlotCapacity");
+    const Subscription = require("../models/Subscription");
+
+    // Upcoming bookings would otherwise keep holding their slots (and
+    // show on the owner's queue) for someone who no longer exists.
+    const upcoming = await Booking.find({ customer: userId, status: "confirmed" });
+    for (const b of upcoming) {
+      const claimed = await Booking.findOneAndUpdate({ _id: b._id, status: "confirmed" }, { status: "cancelled", cancelReason: "Customer deleted their account" });
+      if (claimed && !b.staffId) await SlotCapacity.releaseFor(b);
+    }
+
+    // A deleted owner's store can't take bookings nobody will serve.
+    if (req.user.role === "owner") {
+      await Store.updateMany({ owner: userId }, { isActive: false, isOpen: false });
+    }
+    await Subscription.deleteMany({ user: userId });
 
     // Bookings are kept for the STORE's records (a store owner shouldn't
     // lose their booking history just because a customer deleted their

@@ -65,6 +65,17 @@ const seed = async () => {
       isVerified: true,
     });
 
+    // One store per owner account (the app manages a single store per
+    // owner), so the other demo stores get their own owners.
+    const garageOwner = await User.create({
+      name: "Kumar (Owner)", email: "owner2@demo.com", phone: "9000000004",
+      password, role: "owner", city: "Coimbatore", isVerified: true,
+    });
+    const salonOwner = await User.create({
+      name: "Ganesh (Owner)", email: "owner3@demo.com", phone: "9000000005",
+      password, role: "owner", city: "Coimbatore", isVerified: true,
+    });
+
     console.log("👤 Demo users created");
 
     // Create approved demo stores
@@ -92,7 +103,7 @@ const seed = async () => {
         photos: ["https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80"],
       },
       {
-        owner: owner._id,
+        owner: garageOwner._id,
         name: "Speed Garage",
         category: "mechanic_bike",
         phone: "9876543211",
@@ -116,7 +127,7 @@ const seed = async () => {
 
     // Create a PENDING store (not approved yet — owner registered, waiting admin)
     await Store.create({
-      owner: owner._id,
+      owner: salonOwner._id,
       name: "Ganesh Salon",
       category: "salon",
       phone: "9876543299",
@@ -133,7 +144,9 @@ const seed = async () => {
     console.log("🏪 Demo stores created (2 approved + 1 pending)");
     console.log("\n✅ Seed complete! Demo accounts:");
     console.log("   Admin    → admin@demo.com    / demo123");
-    console.log("   Owner    → owner@demo.com    / demo123");
+    console.log("   Owner    → owner@demo.com    / demo123  (Raja Hair Studio)");
+    console.log("   Owner    → owner2@demo.com   / demo123  (Speed Garage)");
+    console.log("   Owner    → owner3@demo.com   / demo123  (Ganesh Salon, pending approval)");
     console.log("   Customer → customer@demo.com / demo123");
 
     process.exit(0);
