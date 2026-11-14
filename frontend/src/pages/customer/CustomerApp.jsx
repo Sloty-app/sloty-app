@@ -741,11 +741,12 @@ export default function CustomerApp() {
     if (!rescheduleModal || !rescheduleSlot) return;
     setRescheduling(true);
     try {
-      await api("PUT", `/bookings/${rescheduleModal._id}/reschedule`, {
+      const res = await api("PUT", `/bookings/${rescheduleModal._id}/reschedule`, {
         date: getISTDateString(rescheduleDates[rescheduleDateIdx]),
         timeSlot: rescheduleSlot,
       });
-      showToast("Booking rescheduled!");
+      const newToken = res.booking?.tokenNumber;
+      showToast(newToken && newToken !== rescheduleModal.tokenNumber ? `Booking rescheduled! Your new token is ${newToken}` : "Booking rescheduled!");
       setRescheduleModal(null);
       fetchMyBookings();
     } catch (e) {
@@ -1083,6 +1084,11 @@ export default function CustomerApp() {
   useEffect(() => { fetchMyBookings(); }, []);
   useEffect(() => { fetchFavorites(); }, []);
   useEffect(() => { if(tab==="bookings") fetchMyBookings(); }, [tab]);
+  // Profile shows the wallet balance and the Refer & Earn entry, so both
+  // need fresh values whenever it opens, not only after a booking.
+  useEffect(() => {
+    if (tab === "profile") api("GET", "/referral/my").then(r => { setWalletBalance(r.walletBalance || 0); setReferralEnabled(!!r.programEnabled); }).catch(()=>{});
+  }, [tab]);
   useEffect(() => { sessionStorage.setItem("sloty-customer-tab", tab); }, [tab]);
   // Fetch active offers whenever a new store is opened — resets the
   // previously selected offer too, so an offer from a different store

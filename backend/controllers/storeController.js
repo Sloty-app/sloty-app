@@ -235,6 +235,8 @@ exports.updateStore = async (req, res) => {
     const updated = await Store.findByIdAndUpdate(req.params.id, pickOwnerStoreFields(req.body), { new:true, runValidators:true });
     res.status(200).json({ success:true, message:"Store updated", store:updated });
   } catch (err) {
+    if (err.name === "ValidationError") return res.status(400).json({ success:false, message: Object.values(err.errors)[0].message });
+    if (err.name === "CastError") return res.status(400).json({ success:false, message:"Some store details are in the wrong format." });
     res.status(500).json({ success:false, message:"Server error" });
   }
 };
@@ -484,7 +486,8 @@ exports.removeStore = async (req, res) => {
       { new: true }
     );
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
-    res.status(200).json({ success:true, message:`${store.name} has been removed and is no longer visible to customers.` });
+    const cancelled = await require("../utils/storeClosure").cancelStoreBookings([store._id], "The store was removed from Sloty");
+    res.status(200).json({ success:true, message:`${store.name} has been removed and is no longer visible to customers.${cancelled ? ` ${cancelled} upcoming booking(s) were cancelled and refunded.` : ""}` });
   } catch (err) {
     console.error("removeStore error:", err.message);
     res.status(500).json({ success:false, message:"Server error" });
@@ -496,6 +499,11 @@ exports.removeStore = async (req, res) => {
 exports.restoreStore = async (req, res) => {
   try {
     const Store = require("../models/Store");
+    const existing = await Store.findById(req.params.id).select("owner");
+    if (!existing) return res.status(404).json({ success:false, message:"Store not found" });
+    if (!(await User.exists({ _id: existing.owner }))) {
+      return res.status(400).json({ success:false, message:"This store's owner deleted their account, so it can't be restored." });
+    }
     const store = await Store.findByIdAndUpdate(
       req.params.id,
       { isActive: true, removedAt: null, removedBy: null },

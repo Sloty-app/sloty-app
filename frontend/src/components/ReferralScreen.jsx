@@ -187,7 +187,7 @@ export default function ReferralScreen({ onBack }) {
         <div style={{ display:"flex", gap:8 }}>
           <div style={{ flex:1, display:"flex", alignItems:"center", gap:8, border:"2px solid #E8ECF5", borderRadius:12, padding:"11px 14px" }}>
             <Tag size={15} color={C.muted} />
-            <input value={applyCode} onChange={e => setApplyCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8))} placeholder="e.g. SITA1234" style={{ flex:1, border:"none", outline:"none", fontSize:14, fontWeight:800, letterSpacing:2, fontFamily:"'Nunito',sans-serif", color:C.text }} />
+            <input value={applyCode} onChange={e => setApplyCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10))} placeholder="e.g. SITA7K2Q9M" style={{ flex:1, border:"none", outline:"none", fontSize:14, fontWeight:800, letterSpacing:2, fontFamily:"'Nunito',sans-serif", color:C.text }} />
           </div>
           <button onClick={applyReferral} disabled={applying||!applyCode.trim()} style={{ padding:"11px 18px", background:applying||!applyCode.trim()?"#E0E4EF":C.pri, border:"none", borderRadius:12, color:"#fff", fontWeight:800, fontSize:13, cursor:applying||!applyCode.trim()?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif" }}>
             {applying ? "..." : "Apply"}

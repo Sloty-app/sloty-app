@@ -68,7 +68,7 @@ export default function PrivacyPolicy({ onBack } = {}) {
             <P>We do not sell your personal information. We share it only in the following cases:</P>
             <ul>
               <Li><strong>With store owners:</strong> Your name and phone number are shared with the store you book with, so they can confirm your appointment.</Li>
-              <Li><strong>Service providers:</strong> We use trusted third-party services including MSG91 (SMS), Razorpay (payment processing), WhatsApp Business (booking reminders and confirmations, where enabled), Firebase (push notifications), Google (Maps, OAuth), and MongoDB Atlas (database). These providers process data only as necessary to deliver their services.</Li>
+              <Li><strong>Service providers:</strong> We use trusted third-party services including Razorpay (payment processing), WhatsApp Business (booking reminders and confirmations, where enabled), Firebase (phone number verification and push notifications), Google (Maps, OAuth), and MongoDB Atlas (database). These providers process data only as necessary to deliver their services.</Li>
               <Li><strong>Legal requirements:</strong> We may disclose information if required by Indian law or a valid legal process.</Li>
             </ul>
           </Section>

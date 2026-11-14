@@ -1,4 +1,5 @@
 // models/Store.js
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/; // 24-hour "HH:MM"
 const mongoose = require("mongoose");
 
 const ServiceSchema = new mongoose.Schema({
@@ -9,7 +10,7 @@ const ServiceSchema = new mongoose.Schema({
   // is simply unused/ignored rather than needing a placeholder value.
   price:    { type: Number, required: function() { return !this.isPriceVariable; } },
   isPriceVariable: { type: Boolean, default: false },
-  duration: { type: Number, required: true }, // minutes
+  duration: { type: Number, required: true, min: [5, "A service must take at least 5 minutes"], max: [720, "A service can take at most 12 hours"] }, // minutes
   // Owner-set revisit reminder — how many days after a booking of this
   // service to nudge the customer to book again (e.g. 30 for a monthly
   // haircut). null/unset means no automatic revisit reminder for this
@@ -71,18 +72,18 @@ const StoreSchema = new mongoose.Schema({
   staff:    [StaffSchema],
 
   workingHours: {
-    open:  { type: String, default: "09:00" },
-    close: { type: String, default: "21:00" },
+    open:  { type: String, default: "09:00", match: [HHMM, "Opening time must look like 09:00"] },
+    close: { type: String, default: "21:00", match: [HHMM, "Closing time must look like 21:00"] },
     days:  { type: [String], default: ["Mon","Tue","Wed","Thu","Fri","Sat"] },
   },
 
-  slotDuration:      { type: Number, default: 30 },
+  slotDuration:      { type: Number, default: 30, min: 5, max: 240 },
   maxAdvanceBooking: { type: Number, default: 7  },
 
   // Break times (same every day)
   breakTimes: [{
-    open:  { type: String }, // e.g. "13:00"
-    close: { type: String }, // e.g. "14:00"
+    open:  { type: String, match: [HHMM, "Break start must look like 13:00"] }, // e.g. "13:00"
+    close: { type: String, match: [HHMM, "Break end must look like 14:00"] }, // e.g. "14:00"
     label: { type: String, default: "Break" },
   }],
 

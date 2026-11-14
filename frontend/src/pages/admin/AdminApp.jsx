@@ -12,6 +12,12 @@ import {
   IndianRupee, Phone, CalendarDays, ArrowLeft, Search, Wallet, Ban, Gift, MoreHorizontal
 } from "lucide-react";
 
+// Badge for a store: removed (by an admin, or its owner left) wins over approval.
+const storeStatus = (s) =>
+  s.isActive === false ? { label:"Removed", color:C.red }
+  : s.isApproved ? { label:"Live", color:C.green }
+  : { label:"Pending", color:C.acc };
+
 const StatCard = ({ icon: Icon, value, label, color, onClick }) => (
   <div onClick={onClick} style={{ background:"rgba(255,255,255,0.06)", borderRadius:18, padding:16, borderLeft:`4px solid ${color}`, cursor:onClick?"pointer":"default", transition:"background 0.15s" }}>
     <div style={{ width:36, height:36, borderRadius:12, background:color+"22", display:"flex", alignItems:"center", justifyContent:"center", marginBottom:10 }}>
@@ -99,9 +105,9 @@ function StoreDetailModal({ storeId, onClose, onRemoved }) {
                   <h2 style={{ fontSize:19, fontWeight:900, color:"#fff" }}>{store.name}</h2>
                   <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4 }}>
                     <span style={{ fontSize:11, background:cat.color+"22", color:cat.color, padding:"3px 10px", borderRadius:20, fontWeight:700 }}>{cat.name}</span>
-                    <div style={{ display:"flex", alignItems:"center", gap:5, background:store.isApproved?C.green+"22":C.acc+"22", padding:"3px 10px", borderRadius:20 }}>
-                      <Circle size={6} color={store.isApproved?C.green:C.acc} fill={store.isApproved?C.green:C.acc} />
-                      <span style={{ fontSize:10, color:store.isApproved?C.green:C.acc, fontWeight:700 }}>{store.isApproved?"Live":"Pending"}</span>
+                    <div style={{ display:"flex", alignItems:"center", gap:5, background:storeStatus(store).color+"22", padding:"3px 10px", borderRadius:20 }}>
+                      <Circle size={6} color={storeStatus(store).color} fill={storeStatus(store).color} />
+                      <span style={{ fontSize:10, color:storeStatus(store).color, fontWeight:700 }}>{storeStatus(store).label}</span>
                     </div>
                   </div>
                 </div>
@@ -499,8 +505,9 @@ export default function AdminApp() {
     catch(e) { console.error(e); }
   };
 
-  const approved     = allStores.filter(s=>s.isApproved);
-  const pendingCount = allStores.filter(s=>!s.isApproved).length;
+  // Removed stores (isActive:false) are neither live nor waiting for review.
+  const approved     = allStores.filter(s=>s.isApproved && s.isActive!==false);
+  const pendingCount = allStores.filter(s=>!s.isApproved && s.isActive!==false).length;
   const storesByArea = approved.reduce((acc, store) => {
     const area = store.area||store.city||"Other";
     if (!acc[area]) acc[area] = [];
@@ -787,9 +794,9 @@ export default function AdminApp() {
                       <div style={{ flex:1 }}>
                         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
                           <p style={{ fontSize:14, fontWeight:900, color:"#fff" }}>{s.name}</p>
-                          <div style={{ display:"flex", alignItems:"center", gap:5, background:s.isApproved?C.green+"22":C.acc+"22", padding:"3px 10px", borderRadius:20 }}>
-                            <Circle size={6} color={s.isApproved?C.green:C.acc} fill={s.isApproved?C.green:C.acc} />
-                            <span style={{ fontSize:10, color:s.isApproved?C.green:C.acc, fontWeight:700 }}>{s.isApproved?"Live":"Pending"}</span>
+                          <div style={{ display:"flex", alignItems:"center", gap:5, background:storeStatus(s).color+"22", padding:"3px 10px", borderRadius:20 }}>
+                            <Circle size={6} color={storeStatus(s).color} fill={storeStatus(s).color} />
+                            <span style={{ fontSize:10, color:storeStatus(s).color, fontWeight:700 }}>{storeStatus(s).label}</span>
                           </div>
                         </div>
                         <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
@@ -1093,9 +1100,9 @@ export default function AdminApp() {
                         <div style={{ flex:1 }}>
                           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                             <p style={{ fontSize:13, fontWeight:800, color:"#fff" }}>{s.name}</p>
-                            <div style={{ display:"flex", alignItems:"center", gap:4, background:s.isApproved?C.green+"22":C.acc+"22", padding:"2px 8px", borderRadius:20 }}>
-                              <Circle size={5} color={s.isApproved?C.green:C.acc} fill={s.isApproved?C.green:C.acc} />
-                              <span style={{ fontSize:9, color:s.isApproved?C.green:C.acc, fontWeight:700 }}>{s.isApproved?"Live":"Pending"}</span>
+                            <div style={{ display:"flex", alignItems:"center", gap:4, background:storeStatus(s).color+"22", padding:"2px 8px", borderRadius:20 }}>
+                              <Circle size={5} color={storeStatus(s).color} fill={storeStatus(s).color} />
+                              <span style={{ fontSize:9, color:storeStatus(s).color, fontWeight:700 }}>{storeStatus(s).label}</span>
                             </div>
                           </div>
                           <p style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginTop:2 }}>{s.city}</p>

@@ -41,6 +41,9 @@ mongoose.connect(process.env.MONGO_URI, {
     require("./models/User").collection.dropIndex("phone_1_role_1")
       .then(() => console.log("✅ Dropped old phone_1_role_1 index"))
       .catch(() => {}); // already gone
+    require("./utils/referralSystem").backfillReferralCodes(require("./models/User"))
+      .then(n => { if (n) console.log(`✅ Issued referral codes to ${n} account(s)`); })
+      .catch(err => console.error("Referral code backfill error:", err.message));
   })
   .catch(err => { console.error("❌ MongoDB Failed:", err.message); process.exit(1); });
 
@@ -57,10 +60,12 @@ const app = express();
 // Render (like most cloud hosts) sits in front of your app as a
 // reverse proxy — without this, express-rate-limit can't safely
 // determine a request's real IP from the X-Forwarded-For header and
-// throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. "1" trusts exactly one
-// proxy hop, matching Render's actual setup — not a blanket "trust
-// everything," which would let a malicious client fake their IP.
-app.set("trust proxy", 1);
+// throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. The value must equal the
+// real number of proxies: trusting a hop that isn't there lets a client
+// pick its own IP with X-Forwarded-For and dodge every rate limit. So
+// it is 1 (Render) in production and 0 when the server is reached directly.
+const trustProxy = Number(process.env.TRUST_PROXY ?? (process.env.NODE_ENV === "production" ? 1 : 0));
+app.set("trust proxy", Number.isInteger(trustProxy) && trustProxy >= 0 ? trustProxy : 0);
 
 // Explicit CSP — the default helmet CSP would silently block Razorpay's
 // checkout script and Google's OAuth/Maps scripts (both loaded from
@@ -131,6 +136,10 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+// Razorpay's server-to-server payment webhook: needs the raw body for its
+// signature, and Razorpay's retries mustn't count against client limits.
+app.post("/api/payments/webhook", express.raw({ type: "application/json", limit: "1mb" }), require("./controllers/paymentController").razorpayWebhook);
 
 const limiter = rateLimit({ windowMs: 15*60*1000, max: 200, message: { success: false, message: "Too many requests." } });
 app.use("/api/", limiter);

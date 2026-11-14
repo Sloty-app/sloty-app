@@ -19,4 +19,9 @@ if (hasRealCredentials) {
   console.log("   RAZORPAY_KEY_SECRET to .env to use real Razorpay test mode.");
 }
 
-module.exports = { razorpay, hasRealCredentials };
+// Simulated payments only on a server explicitly running as development.
+// An unset NODE_ENV (an easy mistake on a new host) must not turn every
+// UPI booking into a free "paid" one.
+const devPaymentsAllowed = !hasRealCredentials && process.env.NODE_ENV === "development";
+
+module.exports = { razorpay, hasRealCredentials, devPaymentsAllowed };

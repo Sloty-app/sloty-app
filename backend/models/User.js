@@ -30,7 +30,7 @@ const UserSchema = new mongoose.Schema({
   fcmToken:   { type: String,  default: "" },
   noShowCount:           { type: Number, default: 0 },           // cumulative no-shows
   bookingRestrictedUntil:{ type: Date,   default: null },        // null = not restricted
-  referralCode:          { type: String, default: "", sparse: true },
+  referralCode:          { type: String, default: "" }, // unique when set — see index below
   referredBy:            { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   referralCount:         { type: Number, default: 0 },
   walletBalance:         { type: Number, default: 0 },
@@ -69,6 +69,13 @@ UserSchema.index(
 // email is always genuinely present for every account (never null),
 // so this one doesn't need sparse the way phone does.
 UserSchema.index({ email: 1, role: 1 }, { unique: true });
+
+// A code must point at exactly one referrer. Accounts without a code yet
+// ("") are left out; startup backfills them (utils/referralSystem.js).
+UserSchema.index(
+  { referralCode: 1 },
+  { unique: true, name: "referral_code_unique", partialFilterExpression: { referralCode: { $type: "string", $gt: "" } } }
+);
 
 UserSchema.pre("save", async function(next) {
   if (!this.isModified("password")) return next();

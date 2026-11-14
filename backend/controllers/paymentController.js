@@ -13,7 +13,7 @@ const crypto = require("crypto");
 const Booking = require("../models/Booking");
 const Store = require("../models/Store");
 const User = require("../models/User");
-const { razorpay, hasRealCredentials } = require("../config/razorpay");
+const { razorpay, hasRealCredentials, devPaymentsAllowed } = require("../config/razorpay");
 
 // Credits the store's pending settlement balance once a UPI payment is
 // genuinely verified — this is the ledger entry that later shows up
@@ -28,27 +28,41 @@ async function creditStoreBalance(storeId, amount) {
 // A booking cancelled before the payment landed (e.g. the abandoned-
 // payment job ran first) keeps its cancellation and the money goes back
 // to the customer's wallet instead of to the store.
-async function markPaid(res, booking, paymentId, message) {
+// Shared by the browser's verify call and Razorpay's webhook, whichever
+// arrives first; the other then finds the booking already paid.
+async function applyPayment(booking, paymentId) {
   const claimed = await Booking.findOneAndUpdate(
     { _id: booking._id, paymentStatus: { $ne: "paid" }, razorpayOrderId: booking.razorpayOrderId },
     { paymentStatus: "paid", razorpayPaymentId: paymentId },
     { new: true }
   );
-  if (!claimed) {
-    const current = await Booking.findById(booking._id);
-    return res.status(200).json({ success:true, message:"Payment already verified", booking: current });
-  }
+  if (!claimed) return { outcome: "already_paid", booking: await Booking.findById(booking._id) };
   if (claimed.status === "cancelled") {
     const upiAmount = Math.max(0, (claimed.service?.price || 0) - (claimed.walletDeducted || 0));
     await User.findByIdAndUpdate(claimed.customer, { $inc: { walletBalance: upiAmount } });
     claimed.refundStatus = "refunded_to_wallet";
     claimed.refundAmount = (claimed.refundAmount || 0) + upiAmount;
     await claimed.save({ validateBeforeSave:false });
-    return res.status(200).json({ success:true, message:"This booking had already been cancelled, so your payment was added to your Sloty wallet.", booking: claimed });
+    return { outcome: "refunded", booking: claimed };
   }
   await creditStoreBalance(claimed.store, claimed.service.price);
-  return res.status(200).json({ success:true, message, booking: claimed });
+  return { outcome: "paid", booking: claimed };
 }
+
+async function markPaid(res, booking, paymentId, message) {
+  const { outcome, booking: updated } = await applyPayment(booking, paymentId);
+  const text = outcome === "already_paid" ? "Payment already verified"
+    : outcome === "refunded" ? "This booking had already been cancelled, so your payment was added to your Sloty wallet."
+    : message;
+  return res.status(200).json({ success:true, message: text, booking: updated });
+}
+
+// UPI must be switched on by an admin before anyone can pay online —
+// checked here as well as in the app, which only hides the option.
+async function upiEnabled() {
+  return !!(await require("../models/Settings").getSettings()).upiPaymentsEnabled;
+}
+exports.upiEnabled = upiEnabled;
 
 // POST /api/payments/create-order  { bookingId }
 exports.createOrder = async (req, res) => {
@@ -73,11 +87,15 @@ exports.createOrder = async (req, res) => {
     const amountInPaise = Math.round((booking.service.price - (booking.walletDeducted || 0)) * 100);
     if (amountInPaise <= 0) return res.status(400).json({ success:false, message:"Nothing left to pay on this booking" });
 
-    // In production, missing Razorpay keys must not fall back to the
-    // simulated flow below — that marks any UPI booking as paid (and
-    // credits the store) without money ever moving.
-    if (!hasRealCredentials && process.env.NODE_ENV === "production") {
-      console.error("RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET missing in production — online payments are disabled.");
+    if (!(await upiEnabled())) {
+      return res.status(400).json({ success:false, message:"Online payment isn't available right now. Please choose Pay at Store." });
+    }
+
+    // Missing Razorpay keys may only fall back to the simulated flow
+    // below on an explicit development server — it marks any UPI booking
+    // as paid (and credits the store) without money ever moving.
+    if (!hasRealCredentials && !devPaymentsAllowed) {
+      console.error("RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET missing — online payments are disabled.");
       return res.status(503).json({ success:false, message:"Online payment isn't available right now. Please choose Pay at Store." });
     }
 
@@ -134,7 +152,7 @@ exports.verifyPayment = async (req, res) => {
       return res.status(400).json({ success:false, message:"Order mismatch — payment does not match this booking" });
     }
 
-    if (!hasRealCredentials && process.env.NODE_ENV === "production") {
+    if (!hasRealCredentials && !devPaymentsAllowed) {
       return res.status(503).json({ success:false, message:"Online payment isn't available right now." });
     }
     if (!hasRealCredentials) {
@@ -203,5 +221,43 @@ exports.switchToCash = async (req, res) => {
   } catch (err) {
     console.error("switchToCash error:", err.message);
     res.status(500).json({ success:false, message:"Server error" });
+  }
+};
+
+// POST /api/payments/webhook — Razorpay calls this server-to-server when a
+// payment is captured, so a payment still counts if the customer closed the
+// app before the browser could call /verify. Needs the raw body (mounted
+// before express.json in server.js) and RAZORPAY_WEBHOOK_SECRET, the secret
+// set on the webhook in the Razorpay dashboard.
+exports.razorpayWebhook = async (req, res) => {
+  try {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) return res.status(503).json({ success:false, message:"Webhook not configured" });
+
+    const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from("");
+    const expected = crypto.createHmac("sha256", secret).update(raw).digest("hex");
+    const signature = String(req.get("X-Razorpay-Signature") || "");
+    const valid = signature.length === expected.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    if (!valid) return res.status(400).json({ success:false, message:"Invalid signature" });
+
+    const event = JSON.parse(raw.toString("utf8"));
+    if (event.event === "payment.captured" || event.event === "order.paid") {
+      const payment = event.payload?.payment?.entity;
+      const orderId = payment?.order_id || event.payload?.order?.entity?.id;
+      const booking = orderId ? await Booking.findOne({ razorpayOrderId: orderId }) : null;
+      if (booking) {
+        const due = Math.round(((booking.service?.price || 0) - (booking.walletDeducted || 0)) * 100);
+        if (payment && payment.amount !== due) {
+          console.error(`Razorpay webhook: amount ${payment.amount} doesn't match ₹${due / 100} due on booking ${booking._id}; not marking paid.`);
+        } else {
+          await applyPayment(booking, payment?.id || "");
+        }
+      }
+    }
+    // Always 200 for a correctly signed event, or Razorpay keeps retrying.
+    res.status(200).json({ received: true });
+  } catch (err) {
+    console.error("razorpayWebhook error:", err.message);
+    res.status(500).json({ success:false });
   }
 };
