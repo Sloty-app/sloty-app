@@ -49,6 +49,37 @@ const uploadToCloudinary = async (file) => {
   return data.secure_url; // HTTPS URL — this is what gets stored in MongoDB
 };
 
+/* ── Store details waiting for admin review ── */
+const REVIEWED_FIELDS = ["name", "category", "address", "city", "area", "pincode", "location"];
+const REVIEWED_LABELS = { name:"Name", category:"Category", address:"Address", city:"City", area:"Area", pincode:"Pincode", location:"Map location" };
+
+function StoreReviewNotice({ store }) {
+  const waiting = REVIEWED_FIELDS.filter(f => store.pendingChanges?.[f] != null && (f !== "location" || store.pendingChanges.location.lat != null));
+  if (waiting.length) {
+    return (
+      <div style={{ background:C.acc+"15", borderRadius:10, padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"flex-start" }}>
+        <Clock size={14} color="#92610A" style={{ flexShrink:0, marginTop:1 }} />
+        <div style={{ fontSize:11, color:"#92610A", lineHeight:1.45 }}>
+          <p style={{ fontWeight:800 }}>Waiting for admin review</p>
+          {waiting.map(f => (
+            <p key={f}>{REVIEWED_LABELS[f]}: {f === "location" ? "new pin on the map" : String(store.pendingChanges[f])}</p>
+          ))}
+          <p style={{ marginTop:2 }}>Customers see your current details until it's approved.</p>
+        </div>
+      </div>
+    );
+  }
+  if (store.changesRejectedReason) {
+    return (
+      <div style={{ background:C.red+"12", borderRadius:10, padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"flex-start" }}>
+        <AlertCircle size={14} color={C.red} style={{ flexShrink:0, marginTop:1 }} />
+        <p style={{ fontSize:11, color:C.red, fontWeight:700, lineHeight:1.45 }}>Your last changes weren't approved: {store.changesRejectedReason}</p>
+      </div>
+    );
+  }
+  return null;
+}
+
 /* ── Store photo grid + uploader ── */
 function PhotoUploader({ photos, onChange }) {
   const fileInputRef = useRef(null);
@@ -324,6 +355,7 @@ function StaffManager({ hasStaff, onToggleHasStaff, staff, onChange, slotCapacit
                 value={s.name}
                 onChange={e=>updateStaff(i, "name", e.target.value)}
                 placeholder="Name, e.g. Ravi or Dr. Priya Sharma"
+                maxLength={50}
                 style={{ width:"100%", padding:"11px 14px", border:"2px solid #E8ECF5", borderRadius:10, fontSize:13, fontFamily:"'Nunito',sans-serif", marginBottom:8, boxSizing:"border-box", background:C.inputBg }}
               />
               <input
@@ -437,9 +469,12 @@ function OwnerSettings({ myStore, onUpdate, user }) {
     }
   };
 
+  // Name/address changes on an approved store wait for an admin; the form
+  // shows the waiting values so saving another field doesn't undo them.
+  const waiting = myStore.pendingChanges || {};
   const [form, setForm] = useState({
-    name: myStore.name||"", phone: myStore.phone||"",
-    address: myStore.address||"", pincode: myStore.pincode||"",
+    name: waiting.name ?? myStore.name ?? "", phone: myStore.phone||"",
+    address: waiting.address ?? myStore.address ?? "", pincode: waiting.pincode ?? myStore.pincode ?? "",
     workingHours: { open: myStore.workingHours?.open||"", close: myStore.workingHours?.close||"" },
     breakTimes: myStore.breakTimes||[], blockedSlots: myStore.blockedSlots||[],
   });
@@ -448,7 +483,7 @@ function OwnerSettings({ myStore, onUpdate, user }) {
   const [hasStaff, setHasStaff] = useState(myStore.hasStaff||false);
   const [slotCapacity, setSlotCapacity] = useState(myStore.slotCapacity||1);
   const [staff,    setStaff]    = useState(myStore.staff||[]);
-  const [storeLoc, setStoreLoc] = useState({ lat: myStore.location?.lat ?? null, lng: myStore.location?.lng ?? null });
+  const [storeLoc, setStoreLoc] = useState(waiting.location?.lat != null ? { lat: waiting.location.lat, lng: waiting.location.lng } : { lat: myStore.location?.lat ?? null, lng: myStore.location?.lng ?? null });
   const [sectionStatus, setSectionStatus] = useState({}); // { [sectionKey]: {loading, success, error} }
   // Each section starts locked — fields are visible but non-interactive
   // until "Edit" is tapped. Locks back automatically after a
@@ -470,9 +505,13 @@ function OwnerSettings({ myStore, onUpdate, user }) {
     }
     setSectionStatus(s => ({ ...s, [key]: { loading:true, success:"", error:"" } }));
     try {
-      await api("PUT", `/stores/${myStore._id}`, fields);
-      setSectionStatus(s => ({ ...s, [key]: { loading:false, success:"Saved!", error:"" } }));
-      onUpdate({ ...myStore, ...fields });
+      const res = await api("PUT", `/stores/${myStore._id}`, fields);
+      // The server's copy, not ours: on an approved store a name or address
+      // change is held for review and the live value stays the same.
+      const saved = res.store || { ...myStore, ...fields };
+      const held = REVIEWED_FIELDS.some(f => f in fields && saved.pendingChanges?.[f] != null);
+      setSectionStatus(s => ({ ...s, [key]: { loading:false, success: held ? "Sent for admin review" : "Saved!", error:"" } }));
+      onUpdate(saved);
       setEditing(e => ({ ...e, [key]: false }));
       setTimeout(() => setSectionStatus(s => ({ ...s, [key]: { ...(s[key]||{}), success:"" } })), 2200);
     } catch(e) {
@@ -553,11 +592,12 @@ function OwnerSettings({ myStore, onUpdate, user }) {
           <SectionHeader icon={Store} title="Store Info" />
           <SectionEditToggle isEditing={editing.storeInfo} onToggle={() => toggleEdit("storeInfo")} />
         </div>
+        <StoreReviewNotice store={myStore} />
         <LockableSection isEditing={editing.storeInfo}>
-          <Input label="Store Name" value={form.name}    onChange={e=>set("name",e.target.value)}    placeholder="Store name" disabled={!editing.storeInfo} />
-          <Input label="Phone"      value={form.phone}   onChange={e=>set("phone",e.target.value)}   placeholder="Store phone" type="tel" disabled={!editing.storeInfo} />
-          <Input label="Address"    value={form.address} onChange={e=>set("address",e.target.value)} placeholder="Full address" disabled={!editing.storeInfo} />
-          <Input label="Pincode"    value={form.pincode} onChange={e=>set("pincode",e.target.value)} placeholder="6-digit pincode" disabled={!editing.storeInfo} />
+          <Input label="Store Name" value={form.name}    onChange={e=>set("name",e.target.value)}    placeholder="Store name" maxLength={80} disabled={!editing.storeInfo} />
+          <Input label="Phone"      value={form.phone}   onChange={e=>set("phone",e.target.value)}   placeholder="Store phone" type="tel" maxLength={15} disabled={!editing.storeInfo} />
+          <Input label="Address"    value={form.address} onChange={e=>set("address",e.target.value)} placeholder="Full address" maxLength={300} disabled={!editing.storeInfo} />
+          <Input label="Pincode"    value={form.pincode} onChange={e=>set("pincode",e.target.value)} placeholder="6-digit pincode" maxLength={10} disabled={!editing.storeInfo} />
         </LockableSection>
         <SectionSaveButton
           status={sectionStatus.storeInfo}
@@ -644,7 +684,7 @@ function OwnerSettings({ myStore, onUpdate, user }) {
                 </button>
               )}
             </div>
-            <input value={s.name} onChange={e=>setServices(sv=>sv.map((x,j)=>j===i?{...x,name:e.target.value}:x))} placeholder="Service name" style={{ width:"100%", padding:"11px 14px", border:"2px solid #E8ECF5", borderRadius:10, fontSize:13, fontFamily:"'Nunito',sans-serif", marginBottom:10, boxSizing:"border-box", background:C.inputBg }} />
+            <input value={s.name} onChange={e=>setServices(sv=>sv.map((x,j)=>j===i?{...x,name:e.target.value}:x))} placeholder="Service name" maxLength={60} style={{ width:"100%", padding:"11px 14px", border:"2px solid #E8ECF5", borderRadius:10, fontSize:13, fontFamily:"'Nunito',sans-serif", marginBottom:10, boxSizing:"border-box", background:C.inputBg }} />
             <div onClick={()=>setServices(sv=>sv.map((x,j)=>j===i?{...x,isPriceVariable:!x.isPriceVariable, price:!x.isPriceVariable?0:x.price}:x))} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, cursor:"pointer", padding:"8px 10px", background:s.isPriceVariable?C.acc+"15":"transparent", borderRadius:8 }}>
               <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${s.isPriceVariable?C.acc:"#D0D4E0"}`, background:s.isPriceVariable?C.acc:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                 {s.isPriceVariable && <CheckCircle size={11} color="#fff" />}
@@ -1175,15 +1215,15 @@ export default function OwnerApp() {
             <h3 style={{ fontSize:18, fontWeight:900, color:C.text, marginBottom:20 }}>Store Registration</h3>
             <Card>
               <SectionHeader icon={Store} title="Basic Info" />
-              <Input label="Store Name" placeholder="e.g. Raja Hair Studio" value={form.name} onChange={e=>set("name",e.target.value)} />
+              <Input label="Store Name" placeholder="e.g. Raja Hair Studio" maxLength={80} value={form.name} onChange={e=>set("name",e.target.value)} />
               <Select label="Category" value={form.category} onChange={e=>set("category",e.target.value)}>
                 {CATS.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
               </Select>
               <Input label="Phone Number" placeholder="Store contact number" value={form.phone} onChange={e=>set("phone",e.target.value)} type="tel" />
               <Input label="Your Email" placeholder="your.email@example.com" value={form.email} onChange={e=>set("email",e.target.value)} type="email" />
               <p style={{ fontSize:10, color:C.muted, marginTop:-8, marginBottom:12 }}>Required — this is where booking notifications and approval updates will reach you.</p>
-              <Input label="Full Address"  placeholder="Shop number, street name" value={form.address} onChange={e=>set("address",e.target.value)} />
-              <Input label="Pincode"       placeholder="6-digit pincode"          value={form.pincode} onChange={e=>set("pincode",e.target.value)} />
+              <Input label="Full Address"  placeholder="Shop number, street name" maxLength={300} value={form.address} onChange={e=>set("address",e.target.value)} />
+              <Input label="Pincode"       placeholder="6-digit pincode" maxLength={10} value={form.pincode} onChange={e=>set("pincode",e.target.value)} />
             </Card>
             <Card>
               <SectionHeader icon={MapPin} title="Store Location" />

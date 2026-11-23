@@ -142,6 +142,7 @@ function CustomerSettings({ user, onLogout, onOpenLegal }) {
 
   const addAddress = () => {
     if (!newAddrText.trim()) return;
+    if (addresses.length >= 10) { setAddrStatus({ success:"", error:"You can save up to 10 addresses. Remove one to add another." }); return; }
     const updated = [...addresses, { label: newAddrLabel, address: newAddrText.trim() }];
     setNewAddrText("");
     saveAddresses(updated);
@@ -250,7 +251,7 @@ function CustomerSettings({ user, onLogout, onOpenLegal }) {
           ))}
         </div>
         <div style={{ display:"flex", gap:8 }}>
-          <input value={newAddrText} onChange={e=>setNewAddrText(e.target.value)} placeholder="Enter address" style={{ flex:1, padding:"11px 14px", border:"2px solid #E8ECF5", borderRadius:12, fontSize:13, fontFamily:"'Nunito',sans-serif", boxSizing:"border-box" }} />
+          <input value={newAddrText} onChange={e=>setNewAddrText(e.target.value)} maxLength={300} placeholder="Enter address" style={{ flex:1, padding:"11px 14px", border:"2px solid #E8ECF5", borderRadius:12, fontSize:13, fontFamily:"'Nunito',sans-serif", boxSizing:"border-box" }} />
           <button onClick={addAddress} disabled={addrSaving || !newAddrText.trim()} style={{ padding:"0 18px", background:C.pri, color:"#fff", border:"none", borderRadius:12, fontWeight:800, cursor:addrSaving?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif" }}>
             Add
           </button>
@@ -1429,6 +1430,7 @@ export default function CustomerApp() {
           <textarea
             value={reviewComment}
             onChange={e=>setReviewComment(e.target.value)}
+            maxLength={500}
             placeholder="Tell us about your experience (optional)"
             rows={3}
             style={{ width:"100%", padding:"13px 16px", border:"2px solid #E8ECF5", borderRadius:12, fontSize:14, color:C.text, background:C.inputBg, outline:"none", fontFamily:"'Nunito',sans-serif", boxSizing:"border-box", resize:"none", marginBottom:16 }}
@@ -1492,6 +1494,7 @@ export default function CustomerApp() {
               placeholder="Tell us more (optional)"
               value={cancelReasonOther}
               onChange={e => setCancelReasonOther(e.target.value)}
+              maxLength={300}
               style={{ marginBottom:14 }}
             />
           )}

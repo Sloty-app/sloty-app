@@ -6,6 +6,7 @@ const { sendEmail, emailTemplates } = require("../config/mailer");
 const Booking = require("../models/Booking");
 const { getISTDateString } = require("../utils/date");
 const { escapeRegex } = require("../utils/regex");
+const sendNotification = require("../config/notify");
 
 // Public store responses leave out reviews (paged separately) and
 // internal/admin fields — the store's pending payout balance, approval
@@ -15,7 +16,7 @@ const { escapeRegex } = require("../utils/regex");
 // booking; otherwise names stay with the owner.
 const hideTeam = (s) => (s && !s.hasStaff ? { ...s, staff: [] } : s);
 
-const PUBLIC_STORE_FIELDS = "-reviews -pendingUpiBalance -approvedBy -approvedAt -rejectedReason -removedBy -removedAt -ratingSum";
+const PUBLIC_STORE_FIELDS = "-reviews -pendingUpiBalance -approvedBy -approvedAt -rejectedReason -removedBy -removedAt -ratingSum -pendingChanges -changesRejectedReason";
 
 // GET /api/stores — Public: Only APPROVED stores visible to customers
 exports.getStores = async (req, res) => {
@@ -145,6 +146,32 @@ const OWNER_STORE_FIELDS = [
   "maxAdvanceBooking", "breakTimes", "isOpen", "photos",
 ];
 
+// What an admin checked when approving the store; changing any of these
+// on an approved store waits for review (see updateStore).
+const REVIEW_FIELDS = ["name", "category", "address", "city", "area", "pincode", "location"];
+
+const sameValue = (field, current, next) => {
+  if (field === "location") {
+    const n = (v) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v))) ? null : Number(Number(v).toFixed(5));
+    return n(current?.lat) === n(next?.lat) && n(current?.lng) === n(next?.lng);
+  }
+  return String(current ?? "").trim() === String(next ?? "").trim();
+};
+
+// The waiting fields as a plain object, without submittedAt or empty
+// leftovers ({} for a location that was never changed).
+const cleanPending = (pending) => {
+  const p = pending?.toObject ? pending.toObject() : { ...(pending || {}) };
+  const out = {};
+  for (const f of REVIEW_FIELDS) {
+    const v = p[f];
+    if (v === undefined || v === null) continue;
+    if (f === "location" && v.lat == null && v.lng == null) continue;
+    out[f] = f === "location" ? { lat: v.lat ?? null, lng: v.lng ?? null } : v;
+  }
+  return out;
+};
+
 const pickOwnerStoreFields = (body) => {
   const out = {};
   for (const key of OWNER_STORE_FIELDS) {
@@ -232,8 +259,52 @@ exports.updateStore = async (req, res) => {
     // fields stay admin-only. Admins updating a store through this same
     // route (e.g. support edits) get the same restriction; approving a
     // store is a separate, dedicated admin action, not a generic PUT.
-    const updated = await Store.findByIdAndUpdate(req.params.id, pickOwnerStoreFields(req.body), { new:true, runValidators:true });
-    res.status(200).json({ success:true, message:"Store updated", store:updated });
+    const updates = pickOwnerStoreFields(req.body);
+
+    // An approved store's identity (name, category, address) is what the
+    // admin checked. Changes to it wait in pendingChanges for an admin,
+    // while customers keep seeing the approved values. Before approval the
+    // admin reviews the whole store anyway, so edits apply directly.
+    let reviewNeeded = false;
+    if (store.isApproved && req.user.role !== "admin") {
+      const before = cleanPending(store.pendingChanges);
+      const pending = { ...before };
+      let touched = false;
+      for (const f of REVIEW_FIELDS) {
+        if (!Object.prototype.hasOwnProperty.call(updates, f)) continue;
+        const value = updates[f];
+        delete updates[f];
+        touched = true;
+        if (sameValue(f, store[f], value)) delete pending[f];
+        else pending[f] = f === "location" ? { lat: value?.lat ?? null, lng: value?.lng ?? null } : value;
+      }
+      if (touched && JSON.stringify(pending) !== JSON.stringify(before)) {
+        const waiting = Object.keys(pending).length > 0;
+        updates.pendingChanges = waiting ? { ...pending, submittedAt: new Date() } : null;
+        if (waiting) { updates.changesRejectedReason = ""; reviewNeeded = true; }
+      }
+    }
+
+    const updated = await Store.findByIdAndUpdate(req.params.id, updates, { new:true, runValidators:true });
+
+    if (reviewNeeded) {
+      (async () => {
+        try {
+          const admins = await User.find({ role: "admin" }).select("email");
+          const template = emailTemplates.storeChangesPendingAdmin(store.name, Object.keys(cleanPending(updated.pendingChanges)).join(", "));
+          await Promise.all(admins.filter(a => a.email).map(a => sendEmail(a.email, template.subject, template.html)));
+        } catch (notifyErr) {
+          console.error("Admin notification error (changes still saved):", notifyErr.message);
+        }
+      })();
+    }
+
+    const waiting = Object.keys(cleanPending(updated.pendingChanges)).length > 0;
+    res.status(200).json({
+      success: true,
+      message: waiting ? "Saved. Changes to your store's name, category or address go live after an admin reviews them." : "Store updated",
+      store: updated,
+    });
   } catch (err) {
     if (err.name === "ValidationError") return res.status(400).json({ success:false, message: Object.values(err.errors)[0].message });
     if (err.name === "CastError") return res.status(400).json({ success:false, message:"Some store details are in the wrong format." });
@@ -291,11 +362,72 @@ exports.rejectStore = async (req, res) => {
   try {
     const store = await Store.findByIdAndUpdate(
       req.params.id,
-      { isApproved:false, isActive:false, rejectedReason: req.body.reason||"Does not meet requirements" },
+      { isApproved:false, isActive:false, rejectedReason: String(req.body?.reason || "Does not meet requirements").slice(0, 300) },
       { new:true }
     );
     if (!store) return res.status(404).json({ success:false, message:"Store not found" });
     res.status(200).json({ success:true, message:`❌ "${store.name}" rejected.`, store });
+  } catch (err) {
+    res.status(500).json({ success:false, message:"Server error" });
+  }
+};
+
+// Finds the store's waiting changes, but only the version the admin was
+// looking at (body.submittedAt) — if the owner edited them again in the
+// meantime, the admin is asked to look again instead.
+const claimPendingChanges = async (req, res, update) => {
+  if (!mongoose.isValidObjectId(req.params.id)) { res.status(404).json({ success:false, message:"Store not found" }); return null; }
+  const filter = { _id: req.params.id, pendingChanges: { $ne: null } };
+  if (req.body?.submittedAt) {
+    const seen = new Date(req.body.submittedAt);
+    if (isNaN(seen)) { res.status(400).json({ success:false, message:"Invalid submittedAt" }); return null; }
+    filter["pendingChanges.submittedAt"] = seen;
+  }
+  const before = await Store.findOne(filter);
+  if (!before) {
+    const store = await Store.findById(req.params.id).select("pendingChanges");
+    if (!store) res.status(404).json({ success:false, message:"Store not found" });
+    else if (!store.pendingChanges) res.status(400).json({ success:false, message:"This store has no changes waiting for review." });
+    else res.status(409).json({ success:false, message:"The owner changed these details again. Please review the latest version." });
+    return null;
+  }
+  const after = await Store.findOneAndUpdate(
+    { _id: before._id, "pendingChanges.submittedAt": before.pendingChanges.submittedAt },
+    update(cleanPending(before.pendingChanges)),
+    { new: true, runValidators: true }
+  );
+  if (!after) { res.status(409).json({ success:false, message:"The owner changed these details again. Please review the latest version." }); return null; }
+  return { before, after };
+};
+
+// PUT /api/stores/admin/:id/changes/approve — apply the waiting changes
+exports.approveStoreChanges = async (req, res) => {
+  try {
+    const result = await claimPendingChanges(req, res, (pending) => ({ ...pending, pendingChanges: null, changesRejectedReason: "" }));
+    if (!result) return;
+    const { before, after } = result;
+    sendNotification(after.owner, "Store changes approved ✅", `Your changes to ${after.name} are now live on Sloty.`).catch(() => {});
+    res.status(200).json({ success:true, message:`Changes to "${before.name}" approved and live.`, store: after });
+  } catch (err) {
+    if (err.name === "ValidationError") return res.status(400).json({ success:false, message: Object.values(err.errors)[0].message });
+    res.status(500).json({ success:false, message:"Server error" });
+  }
+};
+
+// PUT /api/stores/admin/:id/changes/reject { reason } — drop them; the
+// store keeps its approved details and the owner sees why.
+exports.rejectStoreChanges = async (req, res) => {
+  try {
+    const reason = req.body?.reason;
+    if (reason != null && (typeof reason !== "string" || reason.length > 300)) {
+      return res.status(400).json({ success:false, message:"Reason can be at most 300 characters" });
+    }
+    const why = reason?.trim() || "The changes couldn't be verified";
+    const result = await claimPendingChanges(req, res, () => ({ pendingChanges: null, changesRejectedReason: why }));
+    if (!result) return;
+    const { after } = result;
+    sendNotification(after.owner, "Store changes not approved", `Your changes to ${after.name} weren't approved: ${why}`).catch(() => {});
+    res.status(200).json({ success:true, message:`Changes to "${after.name}" rejected.`, store: after });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }

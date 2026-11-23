@@ -29,6 +29,55 @@ const StatCard = ({ icon: Icon, value, label, color, onClick }) => (
 );
 
 /* ── Store Detail Modal — full analytics view for admin to examine one store ── */
+// An approved store's name, category or address changes wait for review.
+const REVIEWED_FIELDS = [["name","Name"], ["category","Category"], ["address","Address"], ["city","City"], ["area","Area"], ["pincode","Pincode"], ["location","Map location"]];
+const waitingFields = (s) => REVIEWED_FIELDS.filter(([f]) => s.pendingChanges?.[f] != null && (f !== "location" || s.pendingChanges.location.lat != null));
+const showValue = (f, v) =>
+  f === "category" ? (getCat(v)?.name || v)
+  : f === "location" ? (v?.lat != null ? `${Number(v.lat).toFixed(4)}, ${Number(v.lng).toFixed(4)}` : "Not set")
+  : (v || "—");
+
+function StoreChangesCard({ store, onDone }) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const act = async (kind) => {
+    setBusy(kind); setError("");
+    try {
+      await api("PUT", `/stores/admin/${store._id}/changes/${kind}`, { submittedAt: store.pendingChanges.submittedAt, ...(kind === "reject" ? { reason } : {}) });
+      onDone();
+    } catch (e) { setError(e.message); if (/changed these details again/.test(e.message)) onDone(); }
+    finally { setBusy(""); }
+  };
+  const btn = { flex:1, padding:12, border:"none", borderRadius:12, fontWeight:800, cursor:"pointer", fontSize:13, fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:7 };
+  return (
+    <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:20, padding:16, marginBottom:14, border:"1px solid rgba(255,255,255,0.08)" }}>
+      <p style={{ fontWeight:900, color:"#fff", fontSize:15 }}>{store.name}</p>
+      <p style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginBottom:12 }}>
+        {store.owner?.name || "Owner"} · sent {new Date(store.pendingChanges.submittedAt).toLocaleString("en-IN", { day:"numeric", month:"short", hour:"numeric", minute:"2-digit" })}
+      </p>
+      {waitingFields(store).map(([f, label]) => (
+        <div key={f} style={{ background:"rgba(255,255,255,0.04)", borderRadius:12, padding:"10px 12px", marginBottom:8 }}>
+          <p style={{ fontSize:10, fontWeight:800, color:"rgba(255,255,255,0.4)", letterSpacing:1, marginBottom:4 }}>{label.toUpperCase()}</p>
+          <p style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"line-through", wordBreak:"break-word" }}>{showValue(f, store[f])}</p>
+          <p style={{ fontSize:13, color:"#fff", fontWeight:800, wordBreak:"break-word" }}>{showValue(f, store.pendingChanges[f])}</p>
+        </div>
+      ))}
+      <input value={reason} onChange={e => setReason(e.target.value)} maxLength={300} placeholder="Reason if rejecting (shown to the owner)"
+        style={{ width:"100%", padding:"10px 12px", margin:"4px 0 10px", borderRadius:10, border:"1px solid rgba(255,255,255,0.12)", background:"rgba(255,255,255,0.06)", color:"#fff", fontSize:12, fontFamily:"'Nunito',sans-serif", boxSizing:"border-box" }} />
+      {error && <p style={{ color:C.red, fontSize:12, fontWeight:700, marginBottom:8 }}>{error}</p>}
+      <div style={{ display:"flex", gap:8 }}>
+        <button disabled={!!busy} onClick={() => act("approve")} style={{ ...btn, background:`linear-gradient(135deg,${C.green},#00A887)`, color:"#fff", opacity: busy ? 0.6 : 1 }}>
+          <CheckCircle size={15} /> {busy === "approve" ? "Approving…" : "Approve changes"}
+        </button>
+        <button disabled={!!busy} onClick={() => act("reject")} style={{ ...btn, background:C.red+"22", color:C.red, border:`1.5px solid ${C.red}33`, opacity: busy ? 0.6 : 1 }}>
+          <XCircle size={15} /> {busy === "reject" ? "Rejecting…" : "Reject"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function StoreDetailModal({ storeId, onClose, onRemoved }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
@@ -508,6 +557,8 @@ export default function AdminApp() {
   // Removed stores (isActive:false) are neither live nor waiting for review.
   const approved     = allStores.filter(s=>s.isApproved && s.isActive!==false);
   const pendingCount = allStores.filter(s=>!s.isApproved && s.isActive!==false).length;
+  const changeRequests = allStores.filter(s=>s.isApproved && s.isActive!==false && waitingFields(s).length>0);
+  const toReview = pending.length + changeRequests.length;
   const storesByArea = approved.reduce((acc, store) => {
     const area = store.area||store.city||"Other";
     if (!acc[area]) acc[area] = [];
@@ -517,7 +568,7 @@ export default function AdminApp() {
 
   const TABS = [
     { key:"overview",  Icon:LayoutDashboard, label:"Overview"  },
-    { key:"approvals", Icon:Clock,           label:`Approvals${pending.length>0?` (${pending.length})`:""}` },
+    { key:"approvals", Icon:Clock,           label:`Approvals${toReview>0?` (${toReview})`:""}` },
     { key:"stores",    Icon:Store,           label:"Stores"    },
     { key:"customers", Icon:Users,           label:"Customers" },
     { key:"settlements", Icon:IndianRupee,   label:`Settlements${pendingSettlements.length>0?` (${pendingSettlements.length})`:""}` },
@@ -587,7 +638,7 @@ export default function AdminApp() {
               <div>
                 <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10, marginBottom:20 }}>
                   <StatCard icon={Store}       value={approved.length}                label="Approved Stores"  color={C.blue}  onClick={() => {setStoresFilter("approved"); setTab("stores");}} />
-                  <StatCard icon={Clock}       value={pendingCount}                   label="Pending Approval" color={C.acc}   onClick={() => setTab("approvals")} />
+                  <StatCard icon={Clock}       value={pendingCount + changeRequests.length} label="Pending Approval" color={C.acc}   onClick={() => setTab("approvals")} />
                   <StatCard icon={ClipboardList} value={allStores.length}            label="Total Stores"     color={C.green} onClick={() => {setStoresFilter("all"); setTab("stores");}} />
                   <StatCard icon={Map}         value={Object.keys(storesByArea).length} label="Areas Covered" color={C.pri}   onClick={() => setTab("byarea")} />
                 </div>
@@ -680,10 +731,19 @@ export default function AdminApp() {
               <div>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
                   <h3 style={{ fontSize:16, fontWeight:900, color:"#fff" }}>Pending Approvals</h3>
-                  <span style={{ fontSize:12, color:"rgba(255,255,255,0.3)" }}>{pending.length} waiting</span>
+                  <span style={{ fontSize:12, color:"rgba(255,255,255,0.3)" }}>{toReview} waiting</span>
                 </div>
 
-                {pending.length===0 ? (
+                {changeRequests.length > 0 && (
+                  <div style={{ marginBottom:18 }}>
+                    <p style={{ fontSize:12, fontWeight:900, color:C.acc, letterSpacing:1, marginBottom:10 }}>STORE CHANGES TO REVIEW ({changeRequests.length})</p>
+                    <p style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginBottom:12 }}>These stores are live. Customers keep seeing the current details until you approve.</p>
+                    {changeRequests.map(s => <StoreChangesCard key={s._id + s.pendingChanges.submittedAt} store={s} onDone={fetchData} />)}
+                    {pending.length > 0 && <p style={{ fontSize:12, fontWeight:900, color:"rgba(255,255,255,0.5)", letterSpacing:1, margin:"18px 0 10px" }}>NEW STORES ({pending.length})</p>}
+                  </div>
+                )}
+
+                {pending.length===0 && changeRequests.length > 0 ? null : pending.length===0 ? (
                   <div style={{ textAlign:"center", padding:"60px 20px" }}>
                     <div style={{ width:64, height:64, borderRadius:22, background:C.green+"22", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
                       <CheckCircle size={28} color={C.green} />

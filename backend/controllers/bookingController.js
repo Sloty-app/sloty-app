@@ -17,6 +17,15 @@ const { haversineKm, estimateTravelMinutes } = require("../utils/geo");
 
 const MIN_SLOT_MINUTES = 5, MAX_SLOT_MINUTES = 720;
 
+// The visit code (otp) is the customer's proof that they are at the
+// store: the owner types in what the customer reads out. Responses to
+// owner actions must never carry it, or the check means nothing.
+const ownerView = (booking) => {
+  const out = booking?.toObject ? booking.toObject() : { ...booking };
+  delete out.otp;
+  return out;
+};
+
 // Helper: generate time slots between open & close
 // Converts "9:00 AM" / "2:30 PM" style strings to minutes-since-midnight.
 // Needed for real time-range math (e.g. does adding a service push this
@@ -272,6 +281,12 @@ exports.createBooking = async (req, res) => {
 
     if (!Array.isArray(services) || services.length === 0) {
       return res.status(400).json({ success:false, message:"Please select at least one service" });
+    }
+    if (services.length > 20) {
+      return res.status(400).json({ success:false, message:"You can book at most 20 services in one visit" });
+    }
+    if (notes != null && (typeof notes !== "string" || notes.length > 500)) {
+      return res.status(400).json({ success:false, message:"Notes can be at most 500 characters" });
     }
 
     // Validate every requested service against the store's CURRENT service
@@ -755,7 +770,7 @@ exports.updateStatus = async (req, res) => {
       })();
     }
 
-    res.status(200).json({ success:true, message:`Booking marked as ${status}`, booking });
+    res.status(200).json({ success:true, message:`Booking marked as ${status}`, booking: ownerView(booking) });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }
@@ -848,7 +863,7 @@ exports.addServiceToBooking = async (req, res) => {
 
     emitToRoom(`store:${booking.store._id}:${booking.date}`, "queue:update", { reason:"service_added", bookingId: booking._id });
 
-    res.status(200).json({ success:true, message:"Service added", booking, slotWarning });
+    res.status(200).json({ success:true, message:"Service added", booking: ownerView(booking), slotWarning });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }
@@ -870,7 +885,7 @@ exports.markAddOnPaid = async (req, res) => {
     }
     booking.addedServicesPaymentStatus = "paid";
     await booking.save();
-    res.status(200).json({ success:true, message:"Add-on marked as paid", booking });
+    res.status(200).json({ success:true, message:"Add-on marked as paid", booking: ownerView(booking) });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }
@@ -899,7 +914,7 @@ exports.assignServer = async (req, res) => {
     booking.servedByName = member.name;
     await booking.save({ validateBeforeSave:false });
     emitToRoom(`store:${booking.store._id}:${booking.date}`, "queue:update", { reason:"assigned", bookingId: booking._id });
-    res.status(200).json({ success:true, message:`Assigned to ${member.name}`, booking });
+    res.status(200).json({ success:true, message:`Assigned to ${member.name}`, booking: ownerView(booking) });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }
@@ -948,7 +963,7 @@ exports.verifyOtp = async (req, res) => {
     // an owner shouldn't wait on a push notification round-trip before
     // seeing "Verify OTP" actually respond.
     sendNotification(booking.customer, "Your turn! 🎯", `Service started. Please proceed to the counter.`).catch(()=>{});
-    res.status(200).json({ success:true, message:"OTP verified! Service started. ✅", booking });
+    res.status(200).json({ success:true, message:"OTP verified! Service started. ✅", booking: ownerView(booking) });
   } catch (err) {
     res.status(500).json({ success:false, message:"Server error" });
   }
@@ -1020,6 +1035,13 @@ exports.updateBookingLocation = async (req, res) => {
 
 exports.cancelBooking = async (req, res) => {
   try {
+    // Checked before anything changes: the booking is claimed as cancelled
+    // below, so a reason that failed validation on save would leave it
+    // cancelled without its seat released or refund made.
+    const reason = req.body?.reason;
+    if (reason != null && (typeof reason !== "string" || reason.length > 300)) {
+      return res.status(400).json({ success:false, message:"Reason can be at most 300 characters" });
+    }
     const booking = await Booking.findOne({ _id: req.params.id, customer: req.user.id }).populate("store", "name owner");
     if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
     // Matches what the frontend already only ever offers (the Cancel
@@ -1206,7 +1228,8 @@ exports.getBlockedDates = async (req, res) => {
 exports.addBlockedDate = async (req, res) => {
   try {
     const { date, slots, reason } = req.body;
-    if (!date) return res.status(400).json({ success:false, message:"Date is required" });
+    if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ success:false, message:"Pick a valid date" });
+    if (reason != null && typeof reason !== "string") return res.status(400).json({ success:false, message:"Reason must be text" });
 
     const store = await Store.findOne({ owner: req.user.id });
     if (!store) return res.status(404).json({ success:false, message:"You don't have a registered store" });
@@ -1224,6 +1247,7 @@ exports.addBlockedDate = async (req, res) => {
 
     res.status(201).json({ success:true, message:"Blocked date saved", blockedDates: store.blockedSlots });
   } catch (err) {
+    if (err.name === "ValidationError") return res.status(400).json({ success:false, message: Object.values(err.errors)[0].message });
     console.error("addBlockedDate error:", err.message);
     res.status(500).json({ success:false, message:"Server error", error: process.env.NODE_ENV==="development"?err.message:undefined });
   }

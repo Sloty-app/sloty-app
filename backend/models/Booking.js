@@ -90,8 +90,8 @@ const BookingSchema = new mongoose.Schema({
   }],
   addedServicesPaymentStatus: { type: String, enum: ["pending","paid"], default: "pending" },
 
-  notes:        { type: String,  default: "" },
-  cancelReason: { type: String,  default: "" },
+  notes:        { type: String,  default: "", maxlength: [500, "Notes can be at most 500 characters"] },
+  cancelReason: { type: String,  default: "", maxlength: [300, "Reason can be at most 300 characters"] },
   reminderSent: { type: Boolean, default: false },
   otp:          { type: String,  default: "" },
   otpVerified:  { type: Boolean, default: false },

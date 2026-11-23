@@ -20,9 +20,11 @@ const UserSchema = new mongoose.Schema({
   emailVerified: { type: Boolean },
   password: { type: String, required: [true, "Password is required"], minlength: 6, select: false },
   role:     { type: String, enum: ["customer","owner","admin"], default: "customer" },
-  city:     { type: String, default: "" },
-  area:     { type: String, default: "" },
-  avatar:   { type: String, default: "" },
+  city:     { type: String, default: "", trim: true, maxlength: [60, "City can be at most 60 characters"] },
+  area:     { type: String, default: "", trim: true, maxlength: [60, "Area can be at most 60 characters"] },
+  // A link to an uploaded image, never the image itself (a 5 MB data URL
+  // was accepted and sent with every login).
+  avatar:   { type: String, default: "", maxlength: [500, "Avatar link is too long"], validate: { validator: (v) => !v || /^https:\/\/\S+$/.test(v), message: "Avatar must be an https link" } },
   favorites:  [{ type: mongoose.Schema.Types.ObjectId, ref: "Store" }],
   isVerified: { type: Boolean, default: false },
   isActive:   { type: Boolean, default: true },
@@ -40,10 +42,13 @@ const UserSchema = new mongoose.Schema({
     offers:            { type: Boolean, default: true },
     chat:              { type: Boolean, default: true },
   },
-  savedAddresses: [{
-    label:   { type: String },
-    address: { type: String },
-  }],
+  savedAddresses: {
+    type: [{
+      label:   { type: String, trim: true, maxlength: [30, "Address label can be at most 30 characters"] },
+      address: { type: String, trim: true, maxlength: [300, "Address can be at most 300 characters"] },
+    }],
+    validate: { validator: (v) => !v || v.length <= 10, message: "You can save up to 10 addresses" },
+  },
 }, { timestamps: true });
 
 // Same phone number can now have up to 3 separate accounts — one per

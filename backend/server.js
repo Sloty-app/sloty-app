@@ -153,8 +153,10 @@ const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 20, message: { succes
 app.use("/api/auth", authLimiter);
 app.use("/api/payments", authLimiter);
 
-app.use(express.json({ limit: "12mb" }));
-app.use(express.urlencoded({ extended: true, limit: "12mb" }));
+// Images go to Cloudinary and only their links come here, so 1 MB is plenty
+// (12 MB let one request push a 5 MB avatar into the database).
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // Strips out any request body/query/param keys starting with "$" or
 // containing "." — MongoDB's own query-operator syntax. Without this,
@@ -198,6 +200,8 @@ app.use("*", (req, res) => {
 // goes to your own server logs via console.error, just never in the
 // HTTP response itself.
 app.use((err, req, res, next) => {
+  if (err.type === "entity.too.large") return res.status(413).json({ success: false, message: "That request is too large." });
+  if (err.type === "entity.parse.failed") return res.status(400).json({ success: false, message: "The request body isn't valid JSON." });
   console.error("Unhandled error:", err.message);
   const isDev = process.env.NODE_ENV === "development";
   res.status(err.status || 500).json({

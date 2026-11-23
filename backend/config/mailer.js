@@ -229,6 +229,26 @@ const emailTemplates = {
       </div>
     </div>`,
   }),
+
+  storeChangesPendingAdmin: (storeName, fields) => ({
+    subject: `✏️ Store changes to review — ${storeName}`,
+    html: `
+    <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1)">
+      <div style="background:linear-gradient(135deg,#1A1A2E,#2D1B4E);padding:32px;text-align:center">
+        <h1 style="color:#fff;margin:0;font-size:28px">📍 Sloty</h1>
+        <p style="color:rgba(255,255,255,0.6);margin:8px 0 0">Admin Dashboard</p>
+      </div>
+      <div style="padding:32px">
+        <h2 style="color:#1A1A2E;margin:0 0 8px">Store changes waiting for review</h2>
+        <p style="color:#8892A4">An approved store changed details that need your review before customers see them.</p>
+        <div style="background:#F0F2F8;border-radius:12px;padding:20px;margin:20px 0;border-left:4px solid #1A1A2E">
+          <p style="margin:0 0 8px;color:#1A1A2E"><strong>🏪 Store:</strong> ${storeName}</p>
+          <p style="margin:0;color:#1A1A2E"><strong>✏️ Changed:</strong> ${fields}</p>
+        </div>
+        <p style="color:#8892A4;font-size:13px;text-align:center">Login to the Sloty admin dashboard to approve or reject them.</p>
+      </div>
+    </div>`,
+  }),
 };
 
 // Every template interpolates user-supplied text (customer names, store

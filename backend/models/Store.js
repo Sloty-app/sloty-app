@@ -2,8 +2,14 @@
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/; // 24-hour "HH:MM"
 const mongoose = require("mongoose");
 
+// Caps so one form entry can't bloat every response that carries the store.
+const max = (n, what) => [n, `${what} can be at most ${n} characters`];
+const atMost = (n, what) => ({ validator: (v) => !v || v.length <= n, message: `${what}: at most ${n}` });
+const HTTPS_URL = /^https:\/\/\S+$/;
+const CATEGORIES = ["salon","mechanic_bike","mechanic_car","doctor","dentist","mobile_repair","medical_lab","optician","beauty_parlour","unisex_salon"];
+
 const ServiceSchema = new mongoose.Schema({
-  name:     { type: String, required: true },
+  name:     { type: String, required: true, trim: true, maxlength: max(60, "Service name") },
   // Not required when isPriceVariable is true — some services (car
   // PPF, bike repairs needing unknown spare parts) genuinely can't be
   // priced without inspecting the vehicle first. When variable, price
@@ -20,35 +26,35 @@ const ServiceSchema = new mongoose.Schema({
 
 const ReviewSchema = new mongoose.Schema({
   user:    { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  name:    String,
+  name:    { type: String, maxlength: 50 },
   rating:  { type: Number, min: 1, max: 5 },
-  comment: String,
+  comment: { type: String, maxlength: max(500, "Review") },
 }, { timestamps: true });
 
 // One staff member / doctor at a store. Bookings reference this by _id
 // (Booking.staffId) so each staff member gets their own independent
 // queue, token sequence, and slot availability within the same store.
 const StaffSchema = new mongoose.Schema({
-  name:           { type: String, required: true, trim: true },
-  specialization: { type: String, default: "", trim: true }, // e.g. "Cardiologist", "Senior Barber"
+  name:           { type: String, required: true, trim: true, maxlength: max(50, "Team member name") },
+  specialization: { type: String, default: "", trim: true, maxlength: max(60, "Specialization") }, // e.g. "Cardiologist", "Senior Barber"
   isActive:       { type: Boolean, default: true }, // owner can hide without deleting (e.g. doctor on leave)
 }, { timestamps: true });
 
 const StoreSchema = new mongoose.Schema({
   owner:    { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  name:     { type: String, required: [true, "Store name required"], trim: true },
+  name:     { type: String, required: [true, "Store name required"], trim: true, maxlength: max(80, "Store name") },
   category: {
     type: String, required: true,
-    enum: ["salon","mechanic_bike","mechanic_car","doctor","dentist","mobile_repair","medical_lab","optician","beauty_parlour","unisex_salon"],
+    enum: { values: CATEGORIES, message: "Pick a category from the list" },
   },
-  description: { type: String, default: "" },
-  phone:    { type: String, required: true },
-  whatsapp: { type: String, default: "" },
-  email:    { type: String, default: "" },
-  address:  { type: String, required: true },
-  city:     { type: String, required: true },
-  area:     { type: String, default: "" },
-  pincode:  { type: String, required: true },
+  description: { type: String, default: "", maxlength: max(1000, "Description") },
+  phone:    { type: String, required: true, maxlength: max(15, "Phone") },
+  whatsapp: { type: String, default: "", maxlength: max(15, "WhatsApp number") },
+  email:    { type: String, default: "", maxlength: max(100, "Email") },
+  address:  { type: String, required: true, trim: true, maxlength: max(300, "Address") },
+  city:     { type: String, required: true, trim: true, maxlength: max(60, "City") },
+  area:     { type: String, default: "", trim: true, maxlength: max(60, "Area") },
+  pincode:  { type: String, required: true, trim: true, maxlength: max(10, "Pincode") },
   // Captured from "Use My Location" or address search at registration —
   // powers distance-aware reminders for customers booking here.
   location: {
@@ -56,7 +62,7 @@ const StoreSchema = new mongoose.Schema({
     lng: { type: Number, default: null },
   },
 
-  services: [ServiceSchema],
+  services: { type: [ServiceSchema], validate: atMost(50, "Services") },
 
   // Multi-staff / multi-doctor support — opt-in per store.
   // When false (default), the store behaves exactly as before: one
@@ -69,7 +75,7 @@ const StoreSchema = new mongoose.Schema({
   // name. Irrelevant/ignored when hasStaff is true, since named staff
   // already get independent slot availability per person.
   slotCapacity: { type: Number, default: 1, min: 1 },
-  staff:    [StaffSchema],
+  staff:    { type: [StaffSchema], validate: atMost(50, "Team members") },
 
   workingHours: {
     open:  { type: String, default: "09:00", match: [HHMM, "Opening time must look like 09:00"] },
@@ -81,18 +87,18 @@ const StoreSchema = new mongoose.Schema({
   maxAdvanceBooking: { type: Number, default: 7  },
 
   // Break times (same every day)
-  breakTimes: [{
+  breakTimes: { validate: atMost(10, "Breaks"), type: [{
     open:  { type: String, match: [HHMM, "Break start must look like 13:00"] }, // e.g. "13:00"
     close: { type: String, match: [HHMM, "Break end must look like 14:00"] }, // e.g. "14:00"
-    label: { type: String, default: "Break" },
-  }],
+    label: { type: String, default: "Break", maxlength: max(30, "Break label") },
+  }] },
 
   // Blocked slots by date
-  blockedSlots: [{
+  blockedSlots: { validate: atMost(400, "Blocked dates"), type: [{
     date:   { type: String }, // YYYY-MM-DD
     slots:  [{ type: String }], // ["1:00 PM", "1:30 PM"]
-    reason: { type: String, default: "Unavailable" },
-  }],
+    reason: { type: String, default: "Unavailable", maxlength: max(100, "Reason") },
+  }] },
 
   // ── STATUS ── (THE KEY FIELD)
   // isApproved: false  → Owner registered, waiting for admin approval
@@ -121,13 +127,33 @@ const StoreSchema = new mongoose.Schema({
   // the first time a store with this field missing gets reviewed again.
   ratingSum:    { type: Number, default: null },
 
-  photos:  [{ type: String }],
+  // Links to uploaded images (Cloudinary), not the images themselves.
+  photos:  { type: [{ type: String, maxlength: 500, match: [HTTPS_URL, "Photos must be https links"] }], validate: atMost(4, "Photos") },
   reviews: [ReviewSchema],
 
   // Admin fields
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   approvedAt: { type: Date },
-  rejectedReason: { type: String, default: "" },
+  rejectedReason: { type: String, default: "", maxlength: 300 },
+
+  // Name, category or address changes an APPROVED store makes wait here
+  // for an admin (see storeController.updateStore); customers keep seeing
+  // the approved values until then. null = nothing waiting.
+  pendingChanges: {
+    type: new mongoose.Schema({
+      name:     { type: String, trim: true, maxlength: max(80, "Store name") },
+      category: { type: String, enum: { values: CATEGORIES, message: "Pick a category from the list" } },
+      address:  { type: String, trim: true, maxlength: max(300, "Address") },
+      city:     { type: String, trim: true, maxlength: max(60, "City") },
+      area:     { type: String, trim: true, maxlength: max(60, "Area") },
+      pincode:  { type: String, trim: true, maxlength: max(10, "Pincode") },
+      location: { lat: { type: Number }, lng: { type: Number } },
+      submittedAt: { type: Date, default: Date.now },
+    }, { _id: false }),
+    default: null,
+  },
+  // Why the admin turned down the last changes (shown to the owner).
+  changesRejectedReason: { type: String, default: "", maxlength: 300 },
 
 }, { timestamps: true });
 

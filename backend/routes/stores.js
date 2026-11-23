@@ -4,6 +4,7 @@ const {
   getStores, getStore, getStoreReviews, createStore, updateStore,
   getMyStore, approveStore, rejectStore,
   getPendingStores, getAllStores, toggleOpen, addReview, getStoreAnalytics, removeStore, restoreStore,
+  approveStoreChanges, rejectStoreChanges,
 } = require("../controllers/storeController");
 const { protect, authorize } = require("../middleware/auth");
 
@@ -18,6 +19,8 @@ router.get("/admin/pending", protect, authorize("admin"), getPendingStores);
 router.get("/admin/:id/analytics", protect, authorize("admin"), getStoreAnalytics);
 router.put("/admin/:id/remove",    protect, authorize("admin"), removeStore);
 router.put("/admin/:id/restore",   protect, authorize("admin"), restoreStore);
+router.put("/admin/:id/changes/approve", protect, authorize("admin"), approveStoreChanges);
+router.put("/admin/:id/changes/reject",  protect, authorize("admin"), rejectStoreChanges);
 router.get("/admin/all",     protect, authorize("admin"), getAllStores);
 
 router.get("/:id", getStore);
