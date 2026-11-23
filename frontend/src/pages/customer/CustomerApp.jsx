@@ -1091,6 +1091,10 @@ export default function CustomerApp() {
     if (tab === "profile") api("GET", "/referral/my").then(r => { setWalletBalance(r.walletBalance || 0); setReferralEnabled(!!r.programEnabled); }).catch(()=>{});
   }, [tab]);
   useEffect(() => { sessionStorage.setItem("sloty-customer-tab", tab); }, [tab]);
+  // Explore only has the store list, never the "home" screen. A refresh on
+  // Explore (tab restored from sessionStorage) or anything else that resets
+  // screen to "home" while on Explore would otherwise draw a blank page.
+  useEffect(() => { if (tab === "explore" && screen === "home") { setScreen("stores"); fetchStores(); } }, [tab, screen]);
   // Fetch active offers whenever a new store is opened — resets the
   // previously selected offer too, so an offer from a different store
   // can never carry over into a new booking flow.
