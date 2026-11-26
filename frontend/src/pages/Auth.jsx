@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { api } from "../api";
+import { api, BASE } from "../api";
 import { C } from "../constants";
 import { MapPicker, LocationDetector } from "../components/UI";
 import { auth } from "../firebase";
@@ -77,7 +77,7 @@ function PhoneInput({ value, onChange, color=C.pri }) {
    boxes, which just render whatever characters are currently in value —
    the same trick behind every "6-box OTP" UI, without needing six
    separate inputs/refs/focus-management to get right. */
-function OtpBoxes({ value, onChange, color=C.pri, length=6 }) {
+function OtpBoxes({ value, onChange, color=C.pri, length=6, disabled=false }) {
   const inputRef = useRef(null);
   return (
     <div style={{ marginBottom:16 }}>
@@ -109,6 +109,7 @@ function OtpBoxes({ value, onChange, color=C.pri, length=6 }) {
           maxLength={length}
           autoComplete="one-time-code"
           autoFocus
+          readOnly={disabled}
           style={{ position:"absolute", inset:0, opacity:0, border:"none", outline:"none", fontFamily:"'Nunito',sans-serif" }}
         />
       </div>
@@ -178,6 +179,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
   const confirmationRef = useRef(null);
   const recaptchaRef = useRef(null);
   const idTokenRef = useRef(null);
+  const verifyingRef = useRef(false); // blocks a second verify while one is running
 
   const handleGoogleSuccess = async (tokenResponse) => {
     try {
@@ -226,7 +228,12 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
     if (!("OTPCredential" in window)) return;
     const ac = new AbortController();
     navigator.credentials.get({ otp: { transport: ["sms"] }, signal: ac.signal })
-      .then(cred => { if (cred?.code) setOtp(cred.code); })
+      .then(cred => {
+        const code = (cred?.code || "").replace(/\D/g, "").slice(0, 6);
+        if (!code) return;
+        setOtp(code);
+        if (code.length === 6) verifyOtp(code); // SMS read automatically: go straight on
+      })
       .catch(() => {});
     return () => ac.abort();
   }, [step]);
@@ -240,13 +247,15 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
     onSuccess(res);
   };
 
-  const verifyOtp = async () => {
+  const verifyOtp = async (code = otp) => {
+    if (verifyingRef.current) return;
     setErr(""); setBackendRetryNeeded(false);
-    if (otp.length !== 6) return setErr("Enter the 6-digit OTP");
+    if (code.length !== 6) return setErr("Enter the 6-digit OTP");
     if (!confirmationRef.current) return setErr("Session expired — please request a new OTP");
+    verifyingRef.current = true;
     setLoading(true);
     try {
-      const result = await confirmationRef.current.confirm(otp);
+      const result = await confirmationRef.current.confirm(code);
       idTokenRef.current = await result.user.getIdToken();
       await loginToBackend();
     } catch (e) {
@@ -254,6 +263,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
         setStep("name");
       } else if (e.code === "auth/invalid-verification-code") {
         setErr("Incorrect OTP. Please try again.");
+        setOtp(""); // clear the boxes so the next 6 digits verify on their own
       } else if (e.code === "auth/code-expired") {
         setErr("OTP expired. Please request a new one.");
       } else if (idTokenRef.current) {
@@ -268,7 +278,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
         setErr(e.message || "Verification failed. Please try again.");
       }
     }
-    finally { setLoading(false); }
+    finally { setLoading(false); verifyingRef.current = false; }
   };
 
   const retryBackendLogin = async () => {
@@ -329,7 +339,12 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
             Change number
           </button>
 
-          <OtpBoxes value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))} color={cfg.accent} />
+          <OtpBoxes value={otp} disabled={loading} color={cfg.accent} onChange={e => {
+            const code = e.target.value.replace(/\D/g,"").slice(0,6);
+            setOtp(code);
+            // No Verify tap needed: the 6th digit (typed, pasted or autofilled) submits.
+            if (code.length === 6 && !backendRetryNeeded) verifyOtp(code);
+          }} />
 
           {err && (
             <div style={{ background:C.red+"12", border:`1.5px solid ${C.red}33`, borderRadius:12, padding:"11px 14px", marginBottom:14, display:"flex", gap:10, alignItems:"center" }}>
@@ -338,7 +353,7 @@ function CustomerOtpAuth({ cfg, role, onSuccess }) {
             </div>
           )}
 
-          <button onClick={backendRetryNeeded ? retryBackendLogin : verifyOtp} disabled={loading} style={{ width:"100%", padding:"15px", background:loading?"#E0E4EF":cfg.gradient, color:loading?"#AAB":"#fff", border:"none", borderRadius:14, fontSize:15, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:12, boxShadow:loading?"none":"0 6px 24px rgba(0,0,0,0.2)" }}>
+          <button onClick={backendRetryNeeded ? retryBackendLogin : () => verifyOtp()} disabled={loading} style={{ width:"100%", padding:"15px", background:loading?"#E0E4EF":cfg.gradient, color:loading?"#AAB":"#fff", border:"none", borderRadius:14, fontSize:15, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"'Nunito',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:12, boxShadow:loading?"none":"0 6px 24px rgba(0,0,0,0.2)" }}>
             {loading ? (backendRetryNeeded ? "Retrying..." : "Verifying...") : backendRetryNeeded ? <><RotateCcw size={17} /> Retry</> : <><LogIn size={17} /> Verify & Continue</>}
           </button>
 
@@ -392,6 +407,19 @@ export default function Auth() {
 
   const cfg = ROLES[role] || ROLES.customer;
   const RoleIcon = cfg.icon;
+
+  // While the person types their number / OTP: wake the server (a sleeping
+  // host can take several seconds on its first request) and download the
+  // screens they're about to land on, so the next page opens right after
+  // verification instead of only starting that download then. Same module
+  // paths as the lazy() imports in App.jsx, so the browser reuses them.
+  useEffect(() => {
+    fetch(BASE.replace(/\/api\/?$/, "/")).catch(() => {});
+    const load = role === "owner" ? () => import("./owner/OwnerApp")
+               : role === "admin" ? () => import("./admin/AdminApp")
+               : () => import("./customer/CustomerApp");
+    load().catch(() => {});
+  }, [role]);
 
   const [tab,         setTab]         = useState("login");
   const [form,        setForm]        = useState({ name:"", email:"", phone:"", password:"", city:"", area:"" });
